@@ -47,7 +47,7 @@ jobs:
 
       - name: Install UUID extension
         run: |
-          apt-get install -y postgresql-client \
+          apk add postgresql-client \
           && psql -q -h postgres -U postgres -d postgres -c 'CREATE EXTENSION "uuid-ossp";'
 
       - name: Run flake8 tests
