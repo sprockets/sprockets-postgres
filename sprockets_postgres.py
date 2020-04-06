@@ -169,7 +169,7 @@ class ApplicationMixin:
             return await cursor.fetchall()
         return None
 
-    @functools.lru_cache
+    @functools.lru_cache(2)
     def _postgres_query_timeout(self,
                                 timeout: typing.Optional[int] = None) -> int:
         """Return query timeout, either from the specified value or
