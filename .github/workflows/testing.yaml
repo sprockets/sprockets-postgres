@@ -61,7 +61,7 @@ jobs:
 
       - name: Upload Coverage
         uses: codecov/codecov-action@v1.0.2
-        if: github.event_name == 'push' && startsWith(github.event.ref, 'refs/tags') && github.repository == 'sprockets/sprockets-postgres'
+        if: github.event_name == 'push' && github.repository == 'sprockets/sprockets-postgres'
         with:
           token: ${{secrets.CODECOV_TOKEN}}
           file: build/coverage.xml
