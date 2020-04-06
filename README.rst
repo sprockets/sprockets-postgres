@@ -25,7 +25,7 @@ The following table details the environment variable configuration options:
 +=================================+==================================================+=================================+
 | ``PGSQL_URL``                   | The PostgreSQL URL to connect to                 | ``postgresql://localhost:5432`` |
 +---------------------------------+--------------------------------------------------+---------------------------------+
-| ``POSTGRES_MAX_POOL_SIZE``      | Maximum connection count to Postgres per backend | ``0`` (Unlimited                |
+| ``POSTGRES_MAX_POOL_SIZE``      | Maximum connection count to Postgres per backend | ``0`` (Unlimited)               |
 +---------------------------------+--------------------------------------------------+---------------------------------+
 | ``POSTGRES_MIN_POOL_SIZE``      | Minimum or starting pool size.                   | ``1``                           |
 +---------------------------------+--------------------------------------------------+---------------------------------+
@@ -42,7 +42,6 @@ The following table details the environment variable configuration options:
 +---------------------------------+--------------------------------------------------+---------------------------------+
 | ``POSTGRES_UUID``               | Enable UUID support in the client.               | ``TRUE``                        |
 +---------------------------------+--------------------------------------------------+---------------------------------+
-
 
 Requirements
 ------------
