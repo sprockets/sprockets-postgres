@@ -1,8 +1,8 @@
 import asyncio
 import json
 import os
-from unittest import mock
 import uuid
+from unittest import mock
 
 import psycopg2
 from psycopg2 import errors
@@ -82,7 +82,6 @@ class ExecuteTestCase(testing.SprocketsHttpTestCase):
             web.url('/status', StatusRequestHandler)
         ])
         return self.app
-
 
     def test_postgres_status(self):
         response = self.fetch('/status')

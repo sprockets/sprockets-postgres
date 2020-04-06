@@ -18,7 +18,7 @@ from distutils import util
 import aiopg
 import psycopg2
 from aiopg import pool
-from psycopg2 import errors, extras, extensions
+from psycopg2 import errors, extensions, extras
 from tornado import ioloop, web
 
 LOGGER = logging.getLogger('sprockets-postgres')
