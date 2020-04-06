@@ -1,0 +1,13 @@
+version: '3.3'
+services:
+  postgres:
+    image: postgres:12-alpine
+    environment:
+      POSTGRES_HOST_AUTH_METHOD: trust
+    healthcheck:
+      test: pg_isready
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    ports:
+      - 5432
