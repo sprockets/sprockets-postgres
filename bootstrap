@@ -65,7 +65,9 @@ docker-compose up -d --quiet-pull
 
 wait_for_healthy_containers 1
 
-docker-compose exec postgres psql -q -o /dev/null -U postgres -d postgres -c 'CREATE EXTENSION "uuid-ossp";'
+printf "Loading fixture data ... "
+docker-compose exec postgres psql -q -o /dev/null -U postgres -d postgres -f /fixtures/testing.sql
+report_done
 
 cat > build/test-environment<<EOF
 export ASYNC_TEST_TIMEOUT=5

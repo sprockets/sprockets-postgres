@@ -24,7 +24,7 @@ DEFAULT_POSTGRES_MIN_POOL_SIZE = 1
 DEFAULT_POSTGRES_QUERY_TIMEOUT = 120
 DEFAULT_POSTGRES_UUID = 'TRUE'
 
-QueryParameters = typing.Union[list, tuple, None]
+QueryParameters = typing.Union[dict, list, tuple, None]
 Timeout = typing.Union[int, float, None]
 
 
@@ -92,18 +92,17 @@ class PostgresConnector:
         try:
             await method(**kwargs)
         except (asyncio.TimeoutError, psycopg2.Error) as err:
-            LOGGER.error('Caught %r', err)
             exc = self._on_error(metric_name, err)
             if exc:
                 raise exc
-        finally:
+        else:
             if self._record_duration:
                 self._record_duration(
                     metric_name, time.monotonic() - start_time)
         return await self._query_results()
 
     async def _query_results(self) -> QueryResult:
-        row, rows = None, None
+        count, row, rows = self.cursor.rowcount, None, None
         if self.cursor.rowcount == 1:
             try:
                 row = dict(await self.cursor.fetchone())
@@ -114,7 +113,7 @@ class PostgresConnector:
                 rows = [dict(row) for row in await self.cursor.fetchall()]
             except psycopg2.ProgrammingError:
                 pass
-        return QueryResult(self.cursor.rowcount, row, rows)
+        return QueryResult(count, row, rows)
 
 
 class ConnectionException(Exception):
@@ -247,7 +246,10 @@ class RequestHandlerMixin:
                                 metric_name: str = '',
                                 *,
                                 timeout: Timeout = None) -> QueryResult:
-        async with self._postgres_connector(timeout) as connector:
+        async with self.application.postgres_connector(
+                self._on_postgres_error,
+                self._on_postgres_timing,
+                timeout) as connector:
             return await connector.callproc(
                 name, parameters, metric_name, timeout=timeout)
 
@@ -265,7 +267,10 @@ class RequestHandlerMixin:
         either with positional ``%s`` or named ``%({name})s`` placeholders.
 
         """
-        async with self._postgres_connector(timeout) as connector:
+        async with self.application.postgres_connector(
+                self._on_postgres_error,
+                self._on_postgres_timing,
+                timeout) as connector:
             return await connector.execute(
                 sql, parameters, metric_name, timeout=timeout)
 
@@ -276,28 +281,20 @@ class RequestHandlerMixin:
         Will automatically commit or rollback based upon exception.
 
         """
-        async with self._postgres_connector(timeout) as connector:
+        async with self.application.postgres_connector(
+                self._on_postgres_error,
+                self._on_postgres_timing,
+                timeout) as connector:
             async with connector.transaction():
                 yield connector
 
-    @contextlib.asynccontextmanager
-    async def _postgres_connector(self, timeout: Timeout = None) \
-            -> typing.AsyncContextManager[PostgresConnector]:
-        async with self.application.postgres_connector(
-                self.__on_postgres_error,
-                self.__on_postgres_timing,
-                timeout) as connector:
-            yield connector
-
-    def __on_postgres_error(self,
-                            metric_name: str,
-                            exc: Exception) -> typing.Optional[Exception]:
+    def _on_postgres_error(self,
+                           metric_name: str,
+                           exc: Exception) -> typing.Optional[Exception]:
         """Override for different error handling behaviors"""
         LOGGER.error('%s in %s for %s (%s)',
-                     exc.__class__.__name__,
-                     self.__class__.__name__,
-                     metric_name,
-                     str(exc).split('\n')[0])
+                     exc.__class__.__name__, self.__class__.__name__,
+                     metric_name, str(exc).split('\n')[0])
         if isinstance(exc, ConnectionException):
             raise web.HTTPError(503, reason='Database Connection Error')
         elif isinstance(exc, asyncio.TimeoutError):
@@ -308,9 +305,9 @@ class RequestHandlerMixin:
             raise web.HTTPError(500, reason='Database Error')
         return exc
 
-    def __on_postgres_timing(self,
-                             metric_name: str,
-                             duration: float) -> None:
+    def _on_postgres_timing(self,
+                            metric_name: str,
+                            duration: float) -> None:
         """Override for custom metric recording"""
         if hasattr(self, 'influxdb'):  # sprockets-influxdb
             self.influxdb.set_field(metric_name, duration)
