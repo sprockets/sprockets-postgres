@@ -12,40 +12,46 @@ from tornado import web
 import sprockets_postgres
 
 
-class CallprocRequestHandler(web.RequestHandler):
+class CallprocRequestHandler(sprockets_postgres.RequestHandlerMixin,
+                             web.RequestHandler):
 
     async def get(self):
-        result = await self.application.postgres_callproc('uuid_generate_v4')
-        await self.finish({'value': str(result['uuid_generate_v4'])})
+        result = await self.postgres_callproc(
+            'uuid_generate_v4', metric_name='uuid')
+        await self.finish({'value': str(result.row['uuid_generate_v4'])})
 
 
-class ExecuteRequestHandler(web.RequestHandler):
+class ExecuteRequestHandler(sprockets_postgres.RequestHandlerMixin,
+                            web.RequestHandler):
 
     GET_SQL = 'SELECT %s::TEXT AS value;'
 
     async def get(self):
-        result = await self.application.postgres_execute(
-            'get', self.GET_SQL, self.get_argument('value'))
-        await self.finish({'value': result['value'] if result else None})
+        result = await self.postgres_execute(
+            self.GET_SQL, [self.get_argument('value')], 'get')
+        await self.finish({
+            'value': result.row['value'] if result.row else None})
 
 
-class MultiRowRequestHandler(web.RequestHandler):
+class MultiRowRequestHandler(sprockets_postgres.RequestHandlerMixin,
+                             web.RequestHandler):
 
     GET_SQL = 'SELECT * FROM information_schema.enabled_roles;'
 
     async def get(self):
-        rows = await self.application.postgres_execute('get', self.GET_SQL)
-        await self.finish({'rows': [row['role_name'] for row in rows]})
+        result = await self.postgres_execute(self.GET_SQL)
+        await self.finish({'rows': [row['role_name'] for row in result.rows]})
 
 
-class NoRowRequestHandler(web.RequestHandler):
+class NoRowRequestHandler(sprockets_postgres.RequestHandlerMixin,
+                          web.RequestHandler):
 
     GET_SQL = """\
     SELECT * FROM information_schema.tables WHERE table_schema = 'public';"""
 
     async def get(self):
-        rows = await self.application.postgres_execute('get', self.GET_SQL)
-        await self.finish({'rows': rows})
+        result = await self.postgres_execute(self.GET_SQL)
+        await self.finish({'rows': result.rows})
 
 
 class StatusRequestHandler(web.RequestHandler):
@@ -62,7 +68,7 @@ class Application(sprockets_postgres.ApplicationMixin,
     pass
 
 
-class ExecuteTestCase(testing.SprocketsHttpTestCase):
+class TestCase(testing.SprocketsHttpTestCase):
 
     @classmethod
     def setUpClass(cls):
@@ -143,15 +149,44 @@ class ExecuteTestCase(testing.SprocketsHttpTestCase):
         self.assertEqual(response.code, 500)
         self.assertIn(b'Database Error', response.body)
 
-    def test_postgres_programming_error(self):
-        with mock.patch.object(self.app, '_postgres_query_results') as pqr:
-            pqr.side_effect = psycopg2.ProgrammingError()
-            response = self.fetch('/execute?value=1')
-            self.assertEqual(response.code, 200)
-            self.assertIsNone(json.loads(response.body)['value'])
+    @mock.patch('aiopg.cursor.Cursor.fetchone')
+    def test_postgres_programming_error(self, fetchone):
+        fetchone.side_effect = psycopg2.ProgrammingError()
+        response = self.fetch('/execute?value=1')
+        self.assertEqual(response.code, 200)
+        self.assertIsNone(json.loads(response.body)['value'])
 
     @mock.patch('aiopg.connection.Connection.cursor')
     def test_postgres_cursor_raises(self, cursor):
         cursor.side_effect = asyncio.TimeoutError()
         response = self.fetch('/execute?value=1')
         self.assertEqual(response.code, 503)
+
+"""
+class MissingURLTestCase(testing.SprocketsHttpTestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        with open('build/test-environment') as f:
+            for line in f:
+                if line.startswith('export '):
+                    line = line[7:]
+                name, _, value = line.strip().partition('=')
+                if name != 'POSTGRES_URL':
+                    os.environ[name] = value
+        if 'POSTGRES_URL' in os.environ:
+            del os.environ['POSTGRES_URL']
+
+    def setUp(self):
+        self.stop_mock = None
+        super().setUp()
+
+    def get_app(self):
+        self.app = Application()
+        self.stop_mock = mock.Mock(
+            wraps=self.app.stop, side_effect=RuntimeError)
+        return self.app
+
+    def test_that_stop_is_invoked(self):
+        self.stop_mock.assert_called_once_with(self.io_loop)
+"""
