@@ -2,13 +2,14 @@ import asyncio
 import json
 import os
 import typing
+import unittest
 import uuid
 from unittest import mock
 
 import psycopg2
 from psycopg2 import errors
 from sprockets.http import app, testing
-from tornado import web
+from tornado import ioloop, web
 
 import sprockets_postgres
 
@@ -61,6 +62,16 @@ class ErrorRequestHandler(RequestHandler):
                            metric_name: str,
                            exc: Exception) -> typing.Optional[Exception]:
         return RuntimeError()
+
+
+class ErrorPassthroughRequestHandler(RequestHandler):
+
+    async def get(self):
+        exc = self._on_postgres_error('test', RuntimeError())
+        if isinstance(exc, RuntimeError):
+            self.set_status(204)
+        else:
+            raise web.HTTPError(500, 'Did not pass through')
 
 
 class ExecuteRequestHandler(RequestHandler):
@@ -116,6 +127,14 @@ class MultiRowRequestHandler(RequestHandler):
         await self.finish({
             'count': result.row_count,
             'rows': self.cast_data(result.rows)})
+
+
+class NoErrorRequestHandler(ErrorRequestHandler):
+
+    def _on_postgres_error(self,
+                           metric_name: str,
+                           exc: Exception) -> typing.Optional[Exception]:
+        return None
 
 
 class NoRowRequestHandler(RequestHandler):
@@ -210,10 +229,12 @@ class TestCase(testing.SprocketsHttpTestCase):
             web.url('/callproc', CallprocRequestHandler),
             web.url('/count', CountRequestHandler),
             web.url('/error', ErrorRequestHandler),
+            web.url('/error-passthrough', ErrorPassthroughRequestHandler),
             web.url('/execute', ExecuteRequestHandler),
             web.url('/influxdb', InfluxDBRequestHandler),
             web.url('/metrics-mixin', MetricsMixinRequestHandler),
             web.url('/multi-row', MultiRowRequestHandler),
+            web.url('/no-error', NoErrorRequestHandler),
             web.url('/no-row', NoRowRequestHandler),
             web.url('/status', StatusRequestHandler),
             web.url('/transaction', TransactionRequestHandler),
@@ -231,6 +252,13 @@ class RequestHandlerMixinTestCase(TestCase):
         self.assertGreaterEqual(data['pool_size'], 1)
         self.assertGreaterEqual(data['pool_free'], 1)
 
+    @mock.patch('aiopg.pool.Pool.acquire')
+    def test_postgres_status_connect_error(self, acquire):
+        acquire.side_effect = asyncio.TimeoutError()
+        response = self.fetch('/status')
+        self.assertEqual(response.code, 503)
+        self.assertFalse(json.loads(response.body)['available'])
+
     @mock.patch('aiopg.cursor.Cursor.execute')
     def test_postgres_status_error(self, execute):
         execute.side_effect = asyncio.TimeoutError()
@@ -245,11 +273,22 @@ class RequestHandlerMixinTestCase(TestCase):
             uuid.UUID(json.loads(response.body)['value']), uuid.UUID)
 
     @mock.patch('aiopg.cursor.Cursor.execute')
-    def test_postgres_error_passthrough(self, execute):
+    def test_postgres_error(self, execute):
         execute.side_effect = asyncio.TimeoutError
         response = self.fetch('/error')
         self.assertEqual(response.code, 500)
         self.assertIn(b'Internal Server Error', response.body)
+
+    @mock.patch('aiopg.pool.Pool.acquire')
+    def test_postgres_error_on_connect(self, acquire):
+        acquire.side_effect = asyncio.TimeoutError
+        response = self.fetch('/error')
+        self.assertEqual(response.code, 500)
+        self.assertIn(b'Internal Server Error', response.body)
+
+    def test_postgres_error_passthrough(self):
+        response = self.fetch('/error-passthrough')
+        self.assertEqual(response.code, 204)
 
     def test_postgres_execute(self):
         expectation = str(uuid.uuid4())
@@ -369,8 +408,7 @@ class TransactionTestCase(TestCase):
         self.assertEqual(record['last_updated_at'], last_updated)
 
 
-"""
-class MissingURLTestCase(testing.SprocketsHttpTestCase):
+class MissingURLTestCase(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
@@ -384,16 +422,10 @@ class MissingURLTestCase(testing.SprocketsHttpTestCase):
         if 'POSTGRES_URL' in os.environ:
             del os.environ['POSTGRES_URL']
 
-    def setUp(self):
-        self.stop_mock = None
-        super().setUp()
-
-    def get_app(self):
-        self.app = Application()
-        self.stop_mock = mock.Mock(
-            wraps=self.app.stop, side_effect=RuntimeError)
-        return self.app
-
     def test_that_stop_is_invoked(self):
-        self.stop_mock.assert_called_once_with(self.io_loop)
-"""
+        io_loop = ioloop.IOLoop.current()
+        obj = Application()
+        obj.stop = mock.Mock(wraps=obj.stop)
+        obj.start(io_loop)
+        io_loop.start()
+        obj.stop.assert_called_once()
