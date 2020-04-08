@@ -5,13 +5,15 @@ in :class:`Tornado <tornado.web.Application>` /
 :class:`sprockets.http <sprockets.http.app.Application>` applications using
 :py:mod:`aiopg`.
 
+Python versions supported: 3.7+
+
 Installation
 ------------
 ``sprockets-postgres`` is available on the Python package index and is installable via pip:
 
 .. code:: bash
 
-    pip install sprockets-postgres
+    pip3 install sprockets-postgres
 
 
 Documentation
