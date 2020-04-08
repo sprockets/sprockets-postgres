@@ -1,25 +1,7 @@
-Sprockets Postgres
-==================
-An set of mixins and classes for interacting with PostgreSQL using asyncio in
-Tornado / sprockets.http applications using aiopg.
-
-|Version| |Status| |Coverage| |License|
-
-Installation
-------------
-``sprockets-postgres`` is available on the Python package index and is installable via pip:
-
-.. code:: bash
-
-    pip install sprockets-postgres
-
-Documentation
--------------
-Documentation is available at `sprockets-postgres.readthedocs.io <https://sprockets-postgres.readthedocs.io>`_.
-
 Configuration
--------------
-The following table details the environment variable configuration options:
+=============
+:py:mod:`sprockets-postgres <sprockets_postgres>` is configured via environment variables. The following table
+details the configuration options and their defaults.
 
 +---------------------------------+--------------------------------------------------+-------------------+
 | Variable                        | Definition                                       | Default           |
@@ -43,25 +25,3 @@ The following table details the environment variable configuration options:
 +---------------------------------+--------------------------------------------------+-------------------+
 | ``POSTGRES_UUID``               | Enable UUID support in the client.               | ``TRUE``          |
 +---------------------------------+--------------------------------------------------+-------------------+
-
-Requirements
-------------
-- `aiopg <https://aioboto3.readthedocs.io/en/latest/>`_
-- `sprockets.http <https://sprocketshttp.readthedocs.io/en/master/>`_
-- `Tornado <https://tornadoweb.org>`_
-
-Version History
----------------
-Available at https://sprockets-postgres.readthedocs.org/en/latest/history.html
-
-.. |Version| image:: https://img.shields.io/pypi/v/sprockets-postgres.svg?
-   :target: http://badge.fury.io/py/sprockets-postgres
-
-.. |Status| image:: https://img.shields.io/travis/sprockets/sprockets-postgres.svg?
-   :target: https://travis-ci.org/sprockets/sprockets-postgres
-
-.. |Coverage| image:: https://img.shields.io/codecov/c/github/sprockets/sprockets-postgres.svg?
-   :target: https://codecov.io/github/sprockets/sprockets-postgres?branch=master
-
-.. |License| image:: https://img.shields.io/pypi/l/sprockets-postgres.svg?
-   :target: https://sprockets-postgres.readthedocs.org

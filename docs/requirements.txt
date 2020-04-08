@@ -1,0 +1,5 @@
+Sphinx==2.4.4
+sphinx-autodoc-typehints
+sphinx_rtd_theme
+typed_ast
+typing_extensions
