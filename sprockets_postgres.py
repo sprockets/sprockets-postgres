@@ -359,7 +359,8 @@ class ApplicationMixin:
                               loop: ioloop.IOLoop) -> None:
         """Setup the Postgres pool of connections and log if there is an error.
 
-        This is invoked by the Application on start callback mechanism.
+        This is invoked by the :class:`sprockets.http.app.Application` on start
+        callback mechanism.
 
         """
         if 'POSTGRES_URL' not in os.environ:
@@ -403,7 +404,8 @@ class ApplicationMixin:
     async def _postgres_shutdown(self, _ioloop: ioloop.IOLoop) -> None:
         """Shutdown the Postgres connections and wait for them to close.
 
-        This is invoked by the Application shutdown callback mechanism.
+        This is invoked by the :class:`sprockets.http.app.Application` shutdown
+        callback mechanism.
 
         """
         if self._postgres_pool is not None:
