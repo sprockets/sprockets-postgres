@@ -55,10 +55,11 @@ Version History
 Available at https://sprockets-postgres.readthedocs.org/en/latest/history.html
 
 .. |Version| image:: https://img.shields.io/pypi/v/sprockets-postgres.svg?
-   :target: http://badge.fury.io/py/sprockets-postgres
+   :target: https://pypi.python.org/pypi/sprockets-postgres
 
-.. |Status| image:: https://img.shields.io/travis/sprockets/sprockets-postgres.svg?
-   :target: https://travis-ci.org/sprockets/sprockets-postgres
+.. |Status| image:: https://github.com/sprockets/sprockets-postgres/workflows/Testing/badge.svg?
+   :target: https://github.com/sprockets/sprockets-postgres/actions?workflow=Testing
+   :alt: Build Status
 
 .. |Coverage| image:: https://img.shields.io/codecov/c/github/sprockets/sprockets-postgres.svg?
    :target: https://codecov.io/github/sprockets/sprockets-postgres?branch=master
