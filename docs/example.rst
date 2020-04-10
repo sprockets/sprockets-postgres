@@ -29,7 +29,7 @@ The following code provides a simple example for using the
         shutdown the connections cleanly when the application stops.
 
         It should be used in conjunction with :class:`sprockets.http.app.Application`
-        and not directly with :class:``tornado.web.Application`.
+        and not directly with :class:`tornado.web.Application`.
 
         """
 
