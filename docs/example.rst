@@ -23,13 +23,13 @@ The following code provides a simple example for using the
 
     class Application(postgres.ApplicationMixin, app.Application):
         """
-        The ``ApplicationMixin`` provides the foundation for the
-        ``RequestHandlerMixin`` to properly function and will automatically
-        setup the pool to connect to PostgreSQL and will shutdown the connections
-        cleanly when the application stops.
+        The :class:`sprockets_postgres.ApplicationMixin` provides the foundation
+        for the :class:`sprockets_postgres.RequestHandlerMixin` to properly function
+        and will automatically setup the pool to connect to PostgreSQL and will
+        shutdown the connections cleanly when the application stops.
 
-        It should be used in conjunction with ``sprockets.http.app.Application``
-        and not directly with ``tornado.web.Application``.
+        It should be used in conjunction with :class:`sprockets.http.app.Application`
+        and not directly with :class:``tornado.web.Application`.
 
         """
 
