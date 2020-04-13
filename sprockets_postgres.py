@@ -19,8 +19,8 @@ DEFAULT_POSTGRES_CONNECTION_TIMEOUT = 10
 DEFAULT_POSTGRES_CONNECTION_TTL = 300
 DEFAULT_POSTGRES_HSTORE = 'FALSE'
 DEFAULT_POSTGRES_JSON = 'FALSE'
-DEFAULT_POSTGRES_MAX_POOL_SIZE = 0
-DEFAULT_POSTGRES_MIN_POOL_SIZE = 1
+DEFAULT_POSTGRES_MAX_POOL_SIZE = '10'
+DEFAULT_POSTGRES_MIN_POOL_SIZE = '1'
 DEFAULT_POSTGRES_QUERY_TIMEOUT = 120
 DEFAULT_POSTGRES_UUID = 'TRUE'
 
@@ -368,14 +368,14 @@ class ApplicationMixin:
             return self.stop(loop)
         self._postgres_pool = pool.Pool(
             os.environ['POSTGRES_URL'],
-            minsize=int(
-                os.environ.get(
-                    'POSTGRES_MIN_POOL_SIZE',
-                    DEFAULT_POSTGRES_MIN_POOL_SIZE)),
             maxsize=int(
                 os.environ.get(
                     'POSTGRES_MAX_POOL_SIZE',
                     DEFAULT_POSTGRES_MAX_POOL_SIZE)),
+            minsize=int(
+                os.environ.get(
+                    'POSTGRES_MIN_POOL_SIZE',
+                    DEFAULT_POSTGRES_MIN_POOL_SIZE)),
             timeout=int(
                 os.environ.get(
                     'POSTGRES_CONNECT_TIMEOUT',
