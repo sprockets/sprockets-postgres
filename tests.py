@@ -44,6 +44,8 @@ class CountRequestHandler(RequestHandler):
 
     async def get(self):
         result = await self.postgres_execute(self.GET_SQL)
+        assert '<QueryResult row_count=1>' == repr(result)
+        assert result.rows[0] == result.row
         await self.finish(self.cast_data(result.row))
 
 
@@ -117,7 +119,8 @@ class MultiRowRequestHandler(RequestHandler):
         result = await self.postgres_execute(self.GET_SQL)
         await self.finish({
             'count': result.row_count,
-            'rows': self.cast_data(result.rows)})
+            'rows': self.cast_data(result.rows),
+            'iterator_rows': [self.cast_data(r) for r in result]})
 
     async def post(self):
         body = json.loads(self.request.body.decode('utf-8'))
@@ -144,6 +147,7 @@ class NoRowRequestHandler(RequestHandler):
 
     async def get(self):
         result = await self.postgres_execute(self.GET_SQL)
+        assert len(result) == result.row_count
         await self.finish({
             'count': result.row_count,
             'rows': self.cast_data(result.rows)})
@@ -333,14 +337,14 @@ class RequestHandlerMixinTestCase(TestCase):
             self.assertEqual(response.code, 200)
             body = json.loads(response.body)
             self.assertEqual(body['count'], 5)
-            self.assertIsNone(body['rows'])
+            self.assertListEqual(body['rows'], [])
 
     def test_postgres_norow(self):
         response = self.fetch('/no-row')
         self.assertEqual(response.code, 200)
         body = json.loads(response.body)
         self.assertEqual(body['count'], 0)
-        self.assertIsNone(body['rows'])
+        self.assertListEqual(body['rows'], [])
 
     @mock.patch('aiopg.cursor.Cursor.execute')
     def test_postgres_execute_timeout_error(self, execute):

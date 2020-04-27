@@ -1,6 +1,5 @@
 import asyncio
 import contextlib
-import dataclasses
 import logging
 import os
 import time
@@ -31,10 +30,8 @@ Timeout = typing.Union[int, float, None]
 """Type annotation for timeout values"""
 
 
-@dataclasses.dataclass
 class QueryResult:
-    """A :func:`Data Class <dataclasses.dataclass>` that is generated as a
-    result of each query that is executed.
+    """Contains the results of the query that was executed.
 
     :param row_count: The quantity of rows impacted by the query
     :param row: If a single row is returned, the data for that row
@@ -42,9 +39,41 @@ class QueryResult:
         list of rows, in order.
 
     """
-    row_count: int
-    row: typing.Optional[dict]
-    rows: typing.Optional[typing.List[dict]]
+    def __init__(self,
+                 row_count: int,
+                 row: typing.Optional[dict],
+                 rows: typing.Optional[typing.List[dict]]):
+        self._row_count = row_count
+        self._row = row
+        self._rows = rows
+
+    def __repr__(self) -> str:
+        return '<QueryResult row_count={}>'.format(self._row_count)
+
+    def __iter__(self) -> typing.Iterator[dict]:
+        """Iterate across all rows in the result"""
+        for row in self.rows:
+            yield row
+
+    def __len__(self) -> int:
+        """Returns the number of rows impacted by the query"""
+        return self._row_count
+
+    @property
+    def row(self) -> typing.Optional[dict]:
+        return self._row
+
+    @property
+    def row_count(self) -> int:
+        """Return the number of rows for the result"""
+        return self._row_count
+
+    @property
+    def rows(self) -> typing.List[dict]:
+        """Return the result as a list of one or more rows"""
+        if self.row_count == 1:
+            return [self._row]
+        return self._rows or []
 
 
 class PostgresConnector:
