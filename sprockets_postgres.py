@@ -1,13 +1,18 @@
 import asyncio
 import contextlib
 import logging
+import operator
 import os
 import time
 import typing
 from distutils import util
+from urllib import parse
 
+import aiodns
 import aiopg
 import psycopg2
+import pycares
+from aiodns import error as aiodns_error
 from aiopg import pool
 from psycopg2 import errors, extras
 from tornado import ioloop, web
@@ -365,9 +370,11 @@ class ApplicationMixin:
             }
 
         """
+        LOGGER.debug('Querying postgres status')
         query_error = asyncio.Event()
 
-        def on_error(_metric_name, _exc) -> None:
+        def on_error(metric_name, exc) -> None:
+            LOGGER.debug('Query Error for %r: %r', metric_name, exc)
             query_error.set()
             return None
 
@@ -383,6 +390,31 @@ class ApplicationMixin:
             'pool_free': self._postgres_pool.freesize
         }
 
+    async def _postgres_url_from_srv(self, parsed: parse.ParseResult) -> str:
+        if parsed.scheme.startswith('postgresql+'):
+            host_parts = parsed.hostname.split('.')
+            records = await self._resolve_srv(
+                '_{}._{}.{}'.format(
+                    host_parts[0], 'postgresql', '.'.join(host_parts[1:])))
+        elif parsed.scheme.startswith('aws+'):
+            records = await self._resolve_srv(parsed.hostname)
+        else:
+            raise RuntimeError('Unsupported URI Scheme: {}'.format(
+                parsed.scheme))
+
+        if not records:
+            raise RuntimeError('No SRV records found')
+
+        if parsed.username and not parsed.password:
+            return 'postgresql://{}@{}:{}{}'.format(
+                parsed.username, records[0].host, records[0].port, parsed.path)
+        elif parsed.username and parsed.password:
+            return 'postgresql://{}:{}@{}:{}{}'.format(
+                parsed.username, parsed.password,
+                records[0].host, records[0].port, parsed.path)
+        return 'postgresql://{}:{}{}'.format(
+            records[0].host, records[0].port, parsed.path)
+
     async def _postgres_setup(self,
                               _app: web.Application,
                               loop: ioloop.IOLoop) -> None:
@@ -395,8 +427,20 @@ class ApplicationMixin:
         if 'POSTGRES_URL' not in os.environ:
             LOGGER.critical('Missing POSTGRES_URL environment variable')
             return self.stop(loop)
+
+        parsed = parse.urlparse(os.environ['POSTGRES_URL'])
+        if parsed.scheme.endswith('+srv'):
+            try:
+                url = await self._postgres_url_from_srv(parsed)
+            except RuntimeError as error:
+                LOGGER.critical(str(error))
+                return self.stop(loop)
+        else:
+            url = os.environ['POSTGRES_URL']
+
+        LOGGER.debug('Connecting to %s', os.environ['POSTGRES_URL'])
         self._postgres_pool = pool.Pool(
-            os.environ['POSTGRES_URL'],
+            url,
             maxsize=int(
                 os.environ.get(
                     'POSTGRES_MAX_POOL_SIZE',
@@ -429,6 +473,7 @@ class ApplicationMixin:
                 psycopg2.Error) as error:  # pragma: nocover
             LOGGER.warning('Error connecting to PostgreSQL on startup: %s',
                            error)
+        LOGGER.debug('Connected to Postgres')
 
     async def _postgres_shutdown(self, _ioloop: ioloop.IOLoop) -> None:
         """Shutdown the Postgres connections and wait for them to close.
@@ -440,6 +485,18 @@ class ApplicationMixin:
         if self._postgres_pool is not None:
             self._postgres_pool.close()
             await self._postgres_pool.wait_closed()
+
+    @staticmethod
+    async def _resolve_srv(hostname: str) \
+            -> typing.List[pycares.ares_query_srv_result]:
+        resolver = aiodns.DNSResolver(loop=asyncio.get_event_loop())
+        try:
+            records = await resolver.query(hostname, 'SRV')
+        except aiodns_error.DNSError as error:
+            LOGGER.critical('DNS resolution error: %s', error)
+            raise RuntimeError(str(error))
+        s = sorted(records, key=operator.attrgetter('weight'), reverse=True)
+        return sorted(s, key=operator.attrgetter('priority'))
 
 
 class RequestHandlerMixin:

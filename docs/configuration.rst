@@ -25,3 +25,12 @@ details the configuration options and their defaults.
 +---------------------------------+--------------------------------------------------+-----------+
 | ``POSTGRES_UUID``               | Enable UUID support in the client.               | ``TRUE``  |
 +---------------------------------+--------------------------------------------------+-----------+
+
+If ``POSTGRES_URL`` uses a scheme of ``postgresql+srv``, a SRV DNS lookup will be
+performed and the lowest priority record with the highest weight will be selected
+for connecting to Postgres.
+
+AWS's ECS service discovery does not follow the SRV standard, but creates SRV
+records. If ``POSTGRES_URL`` uses a scheme of ``aws+srv``, a SRV DNS lookup will be
+performed using the correct format for ECS service discovery. The lowest priority
+record with the highest weight will be selected for connecting to Postgres.

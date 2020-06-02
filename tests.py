@@ -1,12 +1,16 @@
 import asyncio
+import collections
 import json
 import os
 import typing
 import unittest
 import uuid
-from unittest import mock
+from urllib import parse
 
+import asynctest
 import psycopg2
+import pycares
+from asynctest import mock
 from psycopg2 import errors
 from sprockets.http import app, testing
 from tornado import ioloop, web
@@ -433,3 +437,128 @@ class MissingURLTestCase(unittest.TestCase):
         obj.start(io_loop)
         io_loop.start()
         obj.stop.assert_called_once()
+
+
+SRV = collections.namedtuple(
+    'SRV', ['host', 'port', 'priority', 'weight', 'ttl'])
+
+
+class SRVTestCase(asynctest.TestCase):
+
+    async def test_srv_result(self):
+        obj = Application()
+        result = await obj._resolve_srv('_xmpp-server._tcp.google.com')
+        self.assertIsInstance(result[0], pycares.ares_query_srv_result)
+        self.assertGreater(result[0].ttl, 0)
+
+    async def test_srv_error(self):
+        obj = Application()
+        with self.assertRaises(RuntimeError):
+            await obj._resolve_srv('_postgresql._tcp.foo')
+
+    @mock.patch('sprockets.http.app.Application.stop')
+    @mock.patch('sprockets_postgres.LOGGER.critical')
+    async def test_aws_srv_parsing(self, critical, stop):
+        obj = Application()
+        loop = ioloop.IOLoop.current()
+        with mock.patch.object(obj, '_resolve_srv') as resolve_srv:
+            resolve_srv.return_value = []
+            os.environ['POSTGRES_URL'] = 'aws+srv://foo@bar/baz'
+            await obj._postgres_setup(obj, loop)
+        stop.assert_called_once_with(loop)
+        critical.assert_called_once_with('No SRV records found')
+
+    @mock.patch('sprockets.http.app.Application.stop')
+    @mock.patch('sprockets_postgres.LOGGER.critical')
+    async def test_postgres_srv_parsing(self, critical, stop):
+        obj = Application()
+        loop = ioloop.IOLoop.current()
+        with mock.patch.object(obj, '_resolve_srv') as resolve_srv:
+            resolve_srv.return_value = []
+            os.environ['POSTGRES_URL'] = 'postgresql+srv://foo@bar/baz'
+            await obj._postgres_setup(obj, loop)
+        stop.assert_called_once_with(loop)
+        critical.assert_called_once_with('No SRV records found')
+
+    @mock.patch('sprockets.http.app.Application.stop')
+    @mock.patch('sprockets_postgres.LOGGER.critical')
+    async def test_unsupported_srv_uri(self, critical, stop):
+        obj = Application()
+        loop = ioloop.IOLoop.current()
+        os.environ['POSTGRES_URL'] = 'postgres+srv://foo@bar/baz'
+        await obj._postgres_setup(obj, loop)
+        stop.assert_called_once_with(loop)
+        critical.assert_called_once_with(
+            'Unsupported URI Scheme: postgres+srv')
+
+    @mock.patch('aiodns.DNSResolver.query')
+    async def test_aws_url_from_srv_variation_1(self, query):
+        obj = Application()
+        parsed = parse.urlparse('aws+srv://foo@bar.baz/qux')
+        future = asyncio.Future()
+        future.set_result([
+            SRV('foo2', 5432, 2, 0, 32),
+            SRV('foo1', 5432, 1, 1, 32),
+            SRV('foo3', 6432, 1, 0, 32)
+        ])
+        query.return_value = future
+        url = await obj._postgres_url_from_srv(parsed)
+        query.assert_called_once_with('bar.baz', 'SRV')
+        self.assertEqual(url, 'postgresql://foo@foo1:5432/qux')
+
+    @mock.patch('aiodns.DNSResolver.query')
+    async def test_postgresql_url_from_srv_variation_1(self, query):
+        obj = Application()
+        parsed = parse.urlparse('postgresql+srv://foo@bar.baz/qux')
+        future = asyncio.Future()
+        future.set_result([
+            SRV('foo2', 5432, 2, 0, 32),
+            SRV('foo1', 5432, 1, 0, 32)
+        ])
+        query.return_value = future
+        url = await obj._postgres_url_from_srv(parsed)
+        query.assert_called_once_with('_bar._postgresql.baz', 'SRV')
+        self.assertEqual(url, 'postgresql://foo@foo1:5432/qux')
+
+    @mock.patch('aiodns.DNSResolver.query')
+    async def test_postgresql_url_from_srv_variation_2(self, query):
+        obj = Application()
+        parsed = parse.urlparse('postgresql+srv://foo:bar@baz.qux/corgie')
+        future = asyncio.Future()
+        future.set_result([
+            SRV('foo2', 5432, 2, 0, 32),
+            SRV('foo1', 5432, 1, 0, 32)
+        ])
+        query.return_value = future
+        url = await obj._postgres_url_from_srv(parsed)
+        query.assert_called_once_with('_baz._postgresql.qux', 'SRV')
+        self.assertEqual(url, 'postgresql://foo:bar@foo1:5432/corgie')
+
+    @mock.patch('aiodns.DNSResolver.query')
+    async def test_postgresql_url_from_srv_variation_3(self, query):
+        obj = Application()
+        parsed = parse.urlparse('postgresql+srv://foo.bar/baz')
+        future = asyncio.Future()
+        future.set_result([
+            SRV('foo2', 5432, 2, 0, 32),
+            SRV('foo1', 5432, 1, 0, 32),
+            SRV('foo3', 5432, 1, 10, 32),
+        ])
+        query.return_value = future
+        url = await obj._postgres_url_from_srv(parsed)
+        query.assert_called_once_with('_foo._postgresql.bar', 'SRV')
+        self.assertEqual(url, 'postgresql://foo3:5432/baz')
+
+    @mock.patch('aiodns.DNSResolver.query')
+    async def test_resolve_srv_sorted(self, query):
+        obj = Application()
+        result = [
+            SRV('foo2', 5432, 2, 0, 32),
+            SRV('foo1', 5432, 1, 1, 32),
+            SRV('foo3', 6432, 1, 0, 32)
+        ]
+        future = asyncio.Future()
+        future.set_result(result)
+        query.return_value = future
+        records = await obj._resolve_srv('foo')
+        self.assertListEqual(records, [result[1], result[2], result[0]])
