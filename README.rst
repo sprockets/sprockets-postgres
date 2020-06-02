@@ -55,6 +55,7 @@ record with the highest weight will be selected for connecting to Postgres.
 
 Requirements
 ------------
+- `aiodns <https://github.com/saghul/aiodns>`_
 - `aiopg <https://aioboto3.readthedocs.io/en/latest/>`_
 - `sprockets.http <https://sprocketshttp.readthedocs.io/en/master/>`_
 - `Tornado <https://tornadoweb.org>`_
