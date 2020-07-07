@@ -276,10 +276,9 @@ class ConnectionException(Exception):
 
 
 class ApplicationMixin:
-    """
-    :class:`sprockets.http.app.Application` / :class:`tornado.web.Application`
-    mixin for handling the connection to Postgres and exporting functions for
-    querying the database, getting the status, and proving a cursor.
+    """:class:`sprockets.http.app.Application` mixin for handling the
+    connection to Postgres and exporting functions for querying the database,
+    getting the status, and proving a cursor.
 
     Automatically creates and shuts down :class:`aiopg.Pool` on startup
     and shutdown by installing `on_start` and `shutdown` callbacks into the
@@ -291,7 +290,10 @@ class ApplicationMixin:
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._postgres_pool: typing.Optional[pool.Pool] = None
-        self.runner_callbacks['on_start'].append(self._postgres_setup)
+        self._postgres_connected = asyncio.Event()
+        self._postgres_reconnect = asyncio.Lock()
+        self._postgres_srv: bool = False
+        self.runner_callbacks['on_start'].append(self._postgres_on_start)
         self.runner_callbacks['shutdown'].append(self._postgres_shutdown)
 
     @contextlib.asynccontextmanager
@@ -299,7 +301,8 @@ class ApplicationMixin:
                                  on_error: typing.Callable,
                                  on_duration: typing.Optional[
                                      typing.Callable] = None,
-                                 timeout: Timeout = None) \
+                                 timeout: Timeout = None,
+                                 _attempt: int = 1) \
             -> typing.AsyncContextManager[PostgresConnector]:
         """Asynchronous :ref:`context-manager <python:typecontextmanager>`
         that returns a :class:`~sprockets_postgres.PostgresConnector` instance
@@ -338,7 +341,19 @@ class ApplicationMixin:
                     yield PostgresConnector(
                         cursor, on_error, on_duration, timeout)
         except (asyncio.TimeoutError, psycopg2.Error) as err:
-            exc = on_error('postgres_connector', ConnectionException(str(err)))
+            message = str(err)
+            if isinstance(err, psycopg2.OperationalError) and _attempt == 1:
+                LOGGER.critical('Disconnected from Postgres: %s', err)
+                if not self._postgres_reconnect.locked():
+                    async with self._postgres_reconnect:
+                        if await self._postgres_connect():
+                            async with self.postgres_connector(
+                                    on_error, on_duration, timeout,
+                                    _attempt + 1) as connector:
+                                yield connector
+                            return
+                message = 'disconnected'
+            exc = on_error('postgres_connector', ConnectionException(message))
             if exc:
                 raise exc
             else:   # postgres_status.on_error does not return an exception
@@ -370,6 +385,13 @@ class ApplicationMixin:
             }
 
         """
+        if not self._postgres_connected.is_set():
+            return {
+                'available': False,
+                'pool_size': 0,
+                'pool_free': 0
+            }
+
         LOGGER.debug('Querying postgres status')
         query_error = asyncio.Event()
 
@@ -390,6 +412,89 @@ class ApplicationMixin:
             'pool_free': self._postgres_pool.freesize
         }
 
+    async def _postgres_connect(self) -> bool:
+        """Setup the Postgres pool of connections"""
+        self._postgres_connected.clear()
+
+        parsed = parse.urlparse(os.environ['POSTGRES_URL'])
+        if parsed.scheme.endswith('+srv'):
+            self._postgres_srv = True
+            try:
+                url = await self._postgres_url_from_srv(parsed)
+            except RuntimeError as error:
+                LOGGER.critical(str(error))
+                return False
+        else:
+            url = os.environ['POSTGRES_URL']
+
+        if self._postgres_pool:
+            self._postgres_pool.close()
+
+        LOGGER.debug('Connecting to %s', os.environ['POSTGRES_URL'])
+        try:
+            self._postgres_pool = await pool.Pool.from_pool_fill(
+                url,
+                maxsize=int(
+                    os.environ.get(
+                        'POSTGRES_MAX_POOL_SIZE',
+                        DEFAULT_POSTGRES_MAX_POOL_SIZE)),
+                minsize=int(
+                    os.environ.get(
+                        'POSTGRES_MIN_POOL_SIZE',
+                        DEFAULT_POSTGRES_MIN_POOL_SIZE)),
+                timeout=int(
+                    os.environ.get(
+                        'POSTGRES_CONNECT_TIMEOUT',
+                        DEFAULT_POSTGRES_CONNECTION_TIMEOUT)),
+                enable_hstore=util.strtobool(
+                    os.environ.get(
+                        'POSTGRES_HSTORE', DEFAULT_POSTGRES_HSTORE)),
+                enable_json=util.strtobool(
+                    os.environ.get('POSTGRES_JSON', DEFAULT_POSTGRES_JSON)),
+                enable_uuid=util.strtobool(
+                    os.environ.get('POSTGRES_UUID', DEFAULT_POSTGRES_UUID)),
+                echo=False,
+                on_connect=None,
+                pool_recycle=int(
+                    os.environ.get(
+                        'POSTGRES_CONNECTION_TTL',
+                        DEFAULT_POSTGRES_CONNECTION_TTL)))
+        except (psycopg2.OperationalError,
+                psycopg2.Error) as error:  # pragma: nocover
+            LOGGER.warning('Error connecting to PostgreSQL on startup: %s',
+                           error)
+            return False
+        self._postgres_connected.set()
+        LOGGER.debug('Connected to Postgres')
+        return True
+
+    async def _postgres_on_start(self,
+                                 _app: web.Application,
+                                 loop: ioloop.IOLoop):
+        """Invoked as a startup step for the application
+
+        This is invoked by the :class:`sprockets.http.app.Application` on start
+        callback mechanism.
+
+        """
+        if 'POSTGRES_URL' not in os.environ:
+            LOGGER.critical('Missing POSTGRES_URL environment variable')
+            return self.stop(loop)
+        if not await self._postgres_connect():
+            LOGGER.critical('PostgreSQL failed to connect, shutting down')
+            return self.stop(loop)
+
+    async def _postgres_shutdown(self, _ioloop: ioloop.IOLoop) -> None:
+        """Shutdown the Postgres connections and wait for them to close.
+
+        This is invoked by the :class:`sprockets.http.app.Application` shutdown
+        callback mechanism.
+
+        """
+        if self._postgres_pool is not None:
+            self._postgres_pool.close()
+            await self._postgres_pool.wait_closed()
+
     async def _postgres_url_from_srv(self, parsed: parse.ParseResult) -> str:
         if parsed.scheme.startswith('postgresql+'):
             host_parts = parsed.hostname.split('.')
@@ -405,86 +510,16 @@ class ApplicationMixin:
         if not records:
             raise RuntimeError('No SRV records found')
 
+        netloc = []
         if parsed.username and not parsed.password:
-            return 'postgresql://{}@{}:{}{}'.format(
-                parsed.username, records[0].host, records[0].port, parsed.path)
+            netloc.append('{}@'.format(parsed.username))
         elif parsed.username and parsed.password:
-            return 'postgresql://{}:{}@{}:{}{}'.format(
-                parsed.username, parsed.password,
-                records[0].host, records[0].port, parsed.path)
-        return 'postgresql://{}:{}{}'.format(
-            records[0].host, records[0].port, parsed.path)
-
-    async def _postgres_setup(self,
-                              _app: web.Application,
-                              loop: ioloop.IOLoop) -> None:
-        """Setup the Postgres pool of connections and log if there is an error.
-
-        This is invoked by the :class:`sprockets.http.app.Application` on start
-        callback mechanism.
-
-        """
-        if 'POSTGRES_URL' not in os.environ:
-            LOGGER.critical('Missing POSTGRES_URL environment variable')
-            return self.stop(loop)
-
-        parsed = parse.urlparse(os.environ['POSTGRES_URL'])
-        if parsed.scheme.endswith('+srv'):
-            try:
-                url = await self._postgres_url_from_srv(parsed)
-            except RuntimeError as error:
-                LOGGER.critical(str(error))
-                return self.stop(loop)
-        else:
-            url = os.environ['POSTGRES_URL']
-
-        LOGGER.debug('Connecting to %s', os.environ['POSTGRES_URL'])
-        self._postgres_pool = pool.Pool(
-            url,
-            maxsize=int(
-                os.environ.get(
-                    'POSTGRES_MAX_POOL_SIZE',
-                    DEFAULT_POSTGRES_MAX_POOL_SIZE)),
-            minsize=int(
-                os.environ.get(
-                    'POSTGRES_MIN_POOL_SIZE',
-                    DEFAULT_POSTGRES_MIN_POOL_SIZE)),
-            timeout=int(
-                os.environ.get(
-                    'POSTGRES_CONNECT_TIMEOUT',
-                    DEFAULT_POSTGRES_CONNECTION_TIMEOUT)),
-            enable_hstore=util.strtobool(
-                os.environ.get(
-                    'POSTGRES_HSTORE', DEFAULT_POSTGRES_HSTORE)),
-            enable_json=util.strtobool(
-                os.environ.get('POSTGRES_JSON', DEFAULT_POSTGRES_JSON)),
-            enable_uuid=util.strtobool(
-                os.environ.get('POSTGRES_UUID', DEFAULT_POSTGRES_UUID)),
-            echo=False,
-            on_connect=None,
-            pool_recycle=int(
-                os.environ.get(
-                    'POSTGRES_CONNECTION_TTL',
-                    DEFAULT_POSTGRES_CONNECTION_TTL)))
-        try:
-            async with self._postgres_pool._cond:
-                await self._postgres_pool._fill_free_pool(False)
-        except (psycopg2.OperationalError,
-                psycopg2.Error) as error:  # pragma: nocover
-            LOGGER.warning('Error connecting to PostgreSQL on startup: %s',
-                           error)
-        LOGGER.debug('Connected to Postgres')
-
-    async def _postgres_shutdown(self, _ioloop: ioloop.IOLoop) -> None:
-        """Shutdown the Postgres connections and wait for them to close.
-
-        This is invoked by the :class:`sprockets.http.app.Application` shutdown
-        callback mechanism.
-
-        """
-        if self._postgres_pool is not None:
-            self._postgres_pool.close()
-            await self._postgres_pool.wait_closed()
+            netloc.append('{}:{}@'.format(parsed.username, parsed.password))
+        netloc.append(','.join([
+            '{}:{}'.format(r.host, r.port) for r in records]))
+        return parse.urlunparse(
+            ('postgresql', ''.join(netloc), parsed.path,
+             parsed.params, parsed.query, ''))
 
     @staticmethod
     async def _resolve_srv(hostname: str) \

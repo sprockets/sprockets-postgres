@@ -1,5 +1,6 @@
 import asyncio
 import collections
+import contextlib
 import json
 import os
 import typing
@@ -7,15 +8,19 @@ import unittest
 import uuid
 from urllib import parse
 
+import aiopg
 import asynctest
 import psycopg2
 import pycares
 from asynctest import mock
 from psycopg2 import errors
 from sprockets.http import app, testing
-from tornado import ioloop, web
+from tornado import ioloop, testing as ttesting, web
 
 import sprockets_postgres
+
+
+test_postgres_cursor_oer_invocation = 0
 
 
 class RequestHandler(sprockets_postgres.RequestHandlerMixin,
@@ -223,6 +228,11 @@ class Application(sprockets_postgres.ApplicationMixin,
 
 class TestCase(testing.SprocketsHttpTestCase):
 
+    def setUp(self):
+        super().setUp()
+        asyncio.get_event_loop().run_until_complete(
+            self.app._postgres_connected.wait())
+
     @classmethod
     def setUpClass(cls):
         with open('build/test-environment') as f:
@@ -263,6 +273,12 @@ class RequestHandlerMixinTestCase(TestCase):
     @mock.patch('aiopg.pool.Pool.acquire')
     def test_postgres_status_connect_error(self, acquire):
         acquire.side_effect = asyncio.TimeoutError()
+        response = self.fetch('/status')
+        self.assertEqual(response.code, 503)
+        self.assertFalse(json.loads(response.body)['available'])
+
+    def test_postgres_status_not_connected(self):
+        self.app._postgres_connected.clear()
         response = self.fetch('/status')
         self.assertEqual(response.code, 503)
         self.assertFalse(json.loads(response.body)['available'])
@@ -384,6 +400,55 @@ class RequestHandlerMixinTestCase(TestCase):
         response = self.fetch('/execute?value=1')
         self.assertEqual(response.code, 503)
 
+    def test_postgres_cursor_operational_error_reconnects(self):
+        original = aiopg.connection.Connection.cursor
+
+        @contextlib.asynccontextmanager
+        async def mock_cursor(self, name=None, cursor_factory=None,
+                              scrollable=None, withhold=False, timeout=None):
+            global test_postgres_cursor_oer_invocation
+
+            test_postgres_cursor_oer_invocation += 1
+            if test_postgres_cursor_oer_invocation == 1:
+                raise psycopg2.OperationalError()
+            async with original(self, name, cursor_factory, scrollable,
+                                withhold, timeout) as value:
+                yield value
+
+        aiopg.connection.Connection.cursor = mock_cursor
+
+        with mock.patch.object(self.app, '_postgres_connect') as connect:
+            response = self.fetch('/execute?value=1')
+            self.assertEqual(response.code, 200)
+            self.assertEqual(json.loads(response.body)['value'], '1')
+            connect.assert_called_once()
+
+        aiopg.connection.Connection.cursor = original
+
+    @mock.patch('aiopg.connection.Connection.cursor')
+    def test_postgres_cursor_raises(self, cursor):
+        cursor.side_effect = psycopg2.OperationalError()
+        with mock.patch.object(self.app, '_postgres_connect') as connect:
+            connect.return_value = False
+            response = self.fetch('/execute?value=1')
+            self.assertEqual(response.code, 503)
+            connect.assert_called_once()
+
+    @ttesting.gen_test()
+    @mock.patch('aiopg.connection.Connection.cursor')
+    async def test_postgres_cursor_failure_concurrency(self, cursor):
+        cursor.side_effect = psycopg2.OperationalError()
+
+        def on_error(*args):
+            return RuntimeError
+
+        async def invoke_cursor():
+            async with self.app.postgres_connector(on_error) as connector:
+                await connector.execute('SELECT 1')
+
+        with self.assertRaises(RuntimeError):
+            await asyncio.gather(invoke_cursor(), invoke_cursor())
+
 
 class TransactionTestCase(TestCase):
 
@@ -464,9 +529,9 @@ class SRVTestCase(asynctest.TestCase):
         with mock.patch.object(obj, '_resolve_srv') as resolve_srv:
             resolve_srv.return_value = []
             os.environ['POSTGRES_URL'] = 'aws+srv://foo@bar/baz'
-            await obj._postgres_setup(obj, loop)
+            await obj._postgres_on_start(obj, loop)
         stop.assert_called_once_with(loop)
-        critical.assert_called_once_with('No SRV records found')
+        critical.assert_any_call('No SRV records found')
 
     @mock.patch('sprockets.http.app.Application.stop')
     @mock.patch('sprockets_postgres.LOGGER.critical')
@@ -476,9 +541,9 @@ class SRVTestCase(asynctest.TestCase):
         with mock.patch.object(obj, '_resolve_srv') as resolve_srv:
             resolve_srv.return_value = []
             os.environ['POSTGRES_URL'] = 'postgresql+srv://foo@bar/baz'
-            await obj._postgres_setup(obj, loop)
+            await obj._postgres_on_start(obj, loop)
         stop.assert_called_once_with(loop)
-        critical.assert_called_once_with('No SRV records found')
+        critical.assert_any_call('No SRV records found')
 
     @mock.patch('sprockets.http.app.Application.stop')
     @mock.patch('sprockets_postgres.LOGGER.critical')
@@ -486,9 +551,9 @@ class SRVTestCase(asynctest.TestCase):
         obj = Application()
         loop = ioloop.IOLoop.current()
         os.environ['POSTGRES_URL'] = 'postgres+srv://foo@bar/baz'
-        await obj._postgres_setup(obj, loop)
+        await obj._postgres_on_start(obj, loop)
         stop.assert_called_once_with(loop)
-        critical.assert_called_once_with(
+        critical.assert_any_call(
             'Unsupported URI Scheme: postgres+srv')
 
     @mock.patch('aiodns.DNSResolver.query')
@@ -504,7 +569,8 @@ class SRVTestCase(asynctest.TestCase):
         query.return_value = future
         url = await obj._postgres_url_from_srv(parsed)
         query.assert_called_once_with('bar.baz', 'SRV')
-        self.assertEqual(url, 'postgresql://foo@foo1:5432/qux')
+        self.assertEqual(
+            url, 'postgresql://foo@foo1:5432,foo3:6432,foo2:5432/qux')
 
     @mock.patch('aiodns.DNSResolver.query')
     async def test_postgresql_url_from_srv_variation_1(self, query):
@@ -518,7 +584,7 @@ class SRVTestCase(asynctest.TestCase):
         query.return_value = future
         url = await obj._postgres_url_from_srv(parsed)
         query.assert_called_once_with('_bar._postgresql.baz', 'SRV')
-        self.assertEqual(url, 'postgresql://foo@foo1:5432/qux')
+        self.assertEqual(url, 'postgresql://foo@foo1:5432,foo2:5432/qux')
 
     @mock.patch('aiodns.DNSResolver.query')
     async def test_postgresql_url_from_srv_variation_2(self, query):
@@ -526,13 +592,14 @@ class SRVTestCase(asynctest.TestCase):
         parsed = parse.urlparse('postgresql+srv://foo:bar@baz.qux/corgie')
         future = asyncio.Future()
         future.set_result([
-            SRV('foo2', 5432, 2, 0, 32),
-            SRV('foo1', 5432, 1, 0, 32)
+            SRV('foo2', 5432, 1, 0, 32),
+            SRV('foo1', 5432, 2, 0, 32)
         ])
         query.return_value = future
         url = await obj._postgres_url_from_srv(parsed)
         query.assert_called_once_with('_baz._postgresql.qux', 'SRV')
-        self.assertEqual(url, 'postgresql://foo:bar@foo1:5432/corgie')
+        self.assertEqual(
+            url, 'postgresql://foo:bar@foo2:5432,foo1:5432/corgie')
 
     @mock.patch('aiodns.DNSResolver.query')
     async def test_postgresql_url_from_srv_variation_3(self, query):
@@ -547,7 +614,7 @@ class SRVTestCase(asynctest.TestCase):
         query.return_value = future
         url = await obj._postgres_url_from_srv(parsed)
         query.assert_called_once_with('_foo._postgresql.bar', 'SRV')
-        self.assertEqual(url, 'postgresql://foo3:5432/baz')
+        self.assertEqual(url, 'postgresql://foo3:5432,foo1:5432,foo2:5432/baz')
 
     @mock.patch('aiodns.DNSResolver.query')
     async def test_resolve_srv_sorted(self, query):
