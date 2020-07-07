@@ -426,7 +426,7 @@ class RequestHandlerMixinTestCase(TestCase):
         aiopg.connection.Connection.cursor = original
 
     @mock.patch('aiopg.connection.Connection.cursor')
-    def test_postgres_cursor_raises(self, cursor):
+    def test_postgres_cursor_raises_on_failed_reconnect(self, cursor):
         cursor.side_effect = psycopg2.OperationalError()
         with mock.patch.object(self.app, '_postgres_connect') as connect:
             connect.return_value = False

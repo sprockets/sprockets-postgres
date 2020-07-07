@@ -351,8 +351,8 @@ class ApplicationMixin:
                 if retry:
                     await self._postgres_connected.wait()
                     async with self.postgres_connector(
-                        on_error, on_duration, timeout,
-                        _attempt + 1) as connector:
+                            on_error, on_duration, timeout,
+                            _attempt + 1) as connector:
                         yield connector
                     return
                 message = 'disconnected'
