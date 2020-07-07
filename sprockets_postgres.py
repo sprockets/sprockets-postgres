@@ -344,14 +344,17 @@ class ApplicationMixin:
             message = str(err)
             if isinstance(err, psycopg2.OperationalError) and _attempt == 1:
                 LOGGER.critical('Disconnected from Postgres: %s', err)
+                retry = True
                 if not self._postgres_reconnect.locked():
                     async with self._postgres_reconnect:
-                        if await self._postgres_connect():
-                            async with self.postgres_connector(
-                                    on_error, on_duration, timeout,
-                                    _attempt + 1) as connector:
-                                yield connector
-                            return
+                        retry = await self._postgres_connect()
+                if retry:
+                    await self._postgres_connected.wait()
+                    async with self.postgres_connector(
+                        on_error, on_duration, timeout,
+                        _attempt + 1) as connector:
+                        yield connector
+                    return
                 message = 'disconnected'
             exc = on_error('postgres_connector', ConnectionException(message))
             if exc:
