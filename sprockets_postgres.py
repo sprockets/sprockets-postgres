@@ -433,7 +433,7 @@ class ApplicationMixin:
         if self._postgres_pool:
             self._postgres_pool.close()
 
-        LOGGER.debug('Connecting to %s', os.environ['POSTGRES_URL'])
+        LOGGER.debug('Connecting to %s', url)
         try:
             self._postgres_pool = await pool.Pool.from_pool_fill(
                 url,
