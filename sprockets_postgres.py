@@ -290,8 +290,8 @@ class ApplicationMixin:
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._postgres_pool: typing.Optional[pool.Pool] = None
-        self._postgres_connected = asyncio.Event()
-        self._postgres_reconnect = asyncio.Lock()
+        self._postgres_connected: typing.Optional[asyncio.Event] = None
+        self._postgres_reconnect: typing.Optional[asyncio.Lock] = None
         self._postgres_srv: bool = False
         self.runner_callbacks['on_start'].append(self._postgres_on_start)
         self.runner_callbacks['shutdown'].append(self._postgres_shutdown)
@@ -480,6 +480,9 @@ class ApplicationMixin:
         callback mechanism.
 
         """
+        self._postgres_connected = asyncio.Event()
+        self._postgres_reconnect = asyncio.Lock()
+
         if 'POSTGRES_URL' not in os.environ:
             LOGGER.critical('Missing POSTGRES_URL environment variable')
             return self.stop(loop)
