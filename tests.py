@@ -230,8 +230,10 @@ class TestCase(testing.SprocketsHttpTestCase):
 
     def setUp(self):
         super().setUp()
-        asyncio.get_event_loop().run_until_complete(
-            self.app._postgres_connected.wait())
+        loop = asyncio.get_event_loop()
+        while self.app._postgres_connected is None:
+            loop.run_until_complete(asyncio.sleep(0.1))
+        loop.run_until_complete(self.app._postgres_connected.wait())
 
     @classmethod
     def setUpClass(cls):
