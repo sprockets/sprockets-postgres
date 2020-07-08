@@ -480,12 +480,13 @@ class ApplicationMixin:
         callback mechanism.
 
         """
-        self._postgres_connected = asyncio.Event()
-        self._postgres_reconnect = asyncio.Lock()
-
         if 'POSTGRES_URL' not in os.environ:
             LOGGER.critical('Missing POSTGRES_URL environment variable')
             return self.stop(loop)
+
+        self._postgres_connected = asyncio.Event()
+        self._postgres_reconnect = asyncio.Lock()
+
         if not await self._postgres_connect():
             LOGGER.critical('PostgreSQL failed to connect, shutting down')
             return self.stop(loop)
