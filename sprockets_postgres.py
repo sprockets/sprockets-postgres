@@ -271,10 +271,6 @@ class PostgresConnector:
         return QueryResult(count, row, rows)
 
 
-class ConnectionException(Exception):
-    """Raised when the connection to Postgres can not be established"""
-
-
 class ApplicationMixin:
     """:class:`sprockets.http.app.Application` mixin for handling the
     connection to Postgres and exporting functions for querying the database,
@@ -323,7 +319,7 @@ class ApplicationMixin:
 
         :raises asyncio.TimeoutError: when the request to retrieve a connection
             from the pool times out.
-        :raises sprockets_postgres.ConnectionException: when the application
+        :raises psycopg2.OperationalError: when the application
             can not connect to the configured Postgres instance.
         :raises psycopg2.Error: when Postgres raises an exception during the
             creation of the cursor.
@@ -341,7 +337,6 @@ class ApplicationMixin:
                     yield PostgresConnector(
                         cursor, on_error, on_duration, timeout)
         except (asyncio.TimeoutError, psycopg2.Error) as err:
-            message = str(err)
             if isinstance(err, psycopg2.OperationalError) and _attempt == 1:
                 LOGGER.critical('Disconnected from Postgres: %s', err)
                 retry = True
@@ -355,8 +350,10 @@ class ApplicationMixin:
                             _attempt + 1) as connector:
                         yield connector
                     return
-                message = 'disconnected'
-            exc = on_error('postgres_connector', ConnectionException(message))
+            elif isinstance(err, asyncio.TimeoutError):
+                exc = on_error(
+                    'postgres_connector', psycopg2.OperationalError(err))
+            exc = on_error('postgres_connector', err)
             if exc:
                 raise exc
             else:   # postgres_status.on_error does not return an exception
@@ -681,14 +678,12 @@ class RequestHandlerMixin:
         LOGGER.error('%s in %s for %s (%s)',
                      exc.__class__.__name__, self.__class__.__name__,
                      metric_name, str(exc).split('\n')[0])
-        if isinstance(exc, ConnectionException):
+        if isinstance(exc, psycopg2.OperationalError):
             raise web.HTTPError(503, reason='Database Connection Error')
         elif isinstance(exc, asyncio.TimeoutError):
             raise web.HTTPError(500, reason='Query Timeout')
         elif isinstance(exc, errors.UniqueViolation):
             raise web.HTTPError(409, reason='Unique Violation')
-        elif isinstance(exc, psycopg2.Error):
-            raise web.HTTPError(500, reason='Database Error')
         return exc
 
     def _on_postgres_timing(self,

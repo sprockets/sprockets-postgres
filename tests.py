@@ -386,11 +386,16 @@ class RequestHandlerMixinTestCase(TestCase):
         self.assertIn(b'Unique Violation', response.body)
 
     @mock.patch('aiopg.cursor.Cursor.execute')
+    def test_postgres_execute_unclassified(self, execute):
+        execute.side_effect = errors.InvalidTextRepresentation()
+        with self.assertRaises(psycopg2.errors.InvalidTextRepresentation):
+            self.fetch('/execute?value=1')
+
+    @mock.patch('aiopg.cursor.Cursor.execute')
     def test_postgres_execute_error(self, execute):
         execute.side_effect = psycopg2.Error()
         response = self.fetch('/execute?value=1')
         self.assertEqual(response.code, 500)
-        self.assertIn(b'Database Error', response.body)
 
     @mock.patch('aiopg.cursor.Cursor.fetchone')
     def test_postgres_programming_error(self, fetchone):
