@@ -175,15 +175,6 @@ class NoRowRequestHandler(RequestHandler):
             'rows': self.cast_data(result.rows)})
 
 
-class StatusRequestHandler(RequestHandler):
-
-    async def get(self):
-        status = await self.application.postgres_status()
-        if not status['available']:
-            self.set_status(503, 'Database Unavailable')
-        await self.finish(status)
-
-
 class TransactionRequestHandler(RequestHandler):
 
     GET_SQL = """\
@@ -315,7 +306,7 @@ class TestCase(testing.SprocketsHttpTestCase):
             web.url('/no-error', NoErrorRequestHandler),
             web.url('/no-row', NoRowRequestHandler),
             web.url('/row-count-no-rows', RowCountNoRowsRequestHandler),
-            web.url('/status', StatusRequestHandler),
+            web.url('/status', sprockets_postgres.StatusRequestHandler),
             web.url('/timeout-error', TimeoutErrorRequestHandler),
             web.url('/transaction', TransactionRequestHandler),
             web.url('/transaction/(?P<test_id>.*)', TransactionRequestHandler),
@@ -329,29 +320,31 @@ class RequestHandlerMixinTestCase(TestCase):
     def test_postgres_status(self):
         response = self.fetch('/status')
         data = json.loads(response.body)
-        self.assertTrue(data['available'])
-        self.assertGreaterEqual(data['pool_size'], 1)
-        self.assertGreaterEqual(data['pool_free'], 1)
+        self.assertEqual(data['status'], 'ok')
+        self.assertGreaterEqual(data['postgres']['pool_size'], 1)
+        self.assertGreaterEqual(data['postgres']['pool_free'], 1)
 
     @mock.patch('aiopg.pool.Pool.acquire')
     def test_postgres_status_connect_error(self, acquire):
         acquire.side_effect = asyncio.TimeoutError()
         response = self.fetch('/status')
         self.assertEqual(response.code, 503)
-        self.assertFalse(json.loads(response.body)['available'])
+        data = json.loads(response.body)
+        self.assertEqual(data['status'], 'unavailable')
 
     def test_postgres_status_not_connected(self):
         self.app._postgres_connected.clear()
         response = self.fetch('/status')
         self.assertEqual(response.code, 503)
-        self.assertFalse(json.loads(response.body)['available'])
+        data = json.loads(response.body)
+        self.assertEqual(data['status'], 'unavailable')
 
     @mock.patch('aiopg.cursor.Cursor.execute')
     def test_postgres_status_error(self, execute):
         execute.side_effect = asyncio.TimeoutError()
         response = self.fetch('/status')
-        self.assertEqual(response.code, 503)
-        self.assertFalse(json.loads(response.body)['available'])
+        data = json.loads(response.body)
+        self.assertEqual(data['status'], 'unavailable')
 
     def test_postgres_callproc(self):
         response = self.fetch('/callproc')

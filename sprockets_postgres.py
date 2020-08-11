@@ -717,3 +717,21 @@ class RequestHandlerMixin:
         else:
             LOGGER.debug('Postgres query %s duration: %s',
                          metric_name, duration)
+
+
+class StatusRequestHandler(web.RequestHandler):
+    """A RequestHandler that can be used to expose API health or status"""
+
+    async def get(self, *_args, **_kwarg):
+        postgres = await self.application.postgres_status()
+        if not postgres['available']:
+            self.set_status(503)
+        self.write({
+            'application': self.settings.get('service', 'unknown'),
+            'environment': self.settings.get('environment', 'unknown'),
+            'postgres': {
+                'pool_free': postgres['pool_free'],
+                'pool_size': postgres['pool_size']
+            },
+            'status': 'ok' if postgres['available'] else 'unavailable',
+            'version': self.settings.get('version', 'unknown')})
