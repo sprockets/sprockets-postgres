@@ -405,6 +405,9 @@ class RequestHandlerMixinTestCase(TestCase):
         self.assertEqual(response.code, 200)
         self.assertEqual(json.loads(response.body)['value'], expectation)
         self.app.record_timing.assert_called_once()
+        duration, metric_name = self.app.record_timing.call_args[0]
+        self.assertGreater(duration, 0.0)
+        self.assertEqual('', metric_name)
 
     def test_postgres_multirow_get(self):
         response = self.fetch('/multi-row')

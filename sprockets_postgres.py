@@ -713,7 +713,7 @@ class RequestHandlerMixin:
         if hasattr(self, 'influxdb'):  # sprockets-influxdb
             self.influxdb.set_field(metric_name, duration)
         elif hasattr(self, 'record_timing'):  # sprockets.mixins.metrics
-            self.record_timing(metric_name, duration)
+            self.record_timing(duration, metric_name)
         else:
             LOGGER.debug('Postgres query %s duration: %s',
                          metric_name, duration)
