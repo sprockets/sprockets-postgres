@@ -258,16 +258,24 @@ class PostgresConnector:
 
     async def _query_results(self) -> QueryResult:
         count, row, rows = self.cursor.rowcount, None, None
+
+        def _on_programming_error(err: psycopg2.ProgrammingError) -> None:
+            # Should always be empty in this context
+            if err.pgcode is not None:  # pragma: nocover
+                LOGGER.warning(
+                    'Unexpected value for ProgrammingError(%s).pgcode: %r',
+                    err, err.pgcode)
+
         if self.cursor.rowcount == 1:
             try:
                 row = dict(await self.cursor.fetchone())
-            except psycopg2.ProgrammingError:
-                pass
+            except psycopg2.ProgrammingError as exc:
+                _on_programming_error(exc)
         elif self.cursor.rowcount > 1:
             try:
                 rows = [dict(row) for row in await self.cursor.fetchall()]
-            except psycopg2.ProgrammingError:
-                pass
+            except psycopg2.ProgrammingError as exc:
+                _on_programming_error(exc)
         return QueryResult(count, row, rows)
 
 

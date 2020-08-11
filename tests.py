@@ -107,6 +107,19 @@ class InfluxDBRequestHandler(ExecuteRequestHandler):
         self.influxdb.add_field = mock.Mock()
 
 
+class RowCountNoRowsRequestHandler(RequestHandler):
+
+    GET_SQL = 'INSERT INTO public.row_count_no_rows (value) VALUES (%(value)s)'
+
+    async def get(self):
+        count = 0
+        for iteration in range(0, 5):
+            result = await self.postgres_execute(
+                self.GET_SQL, {'value': uuid.uuid4()})
+            count += len(result)
+        await self.finish({'count': count})
+
+
 class MetricsMixinRequestHandler(ExecuteRequestHandler):
 
     def __init__(self, *args, **kwargs):
@@ -301,6 +314,7 @@ class TestCase(testing.SprocketsHttpTestCase):
             web.url('/multi-row', MultiRowRequestHandler),
             web.url('/no-error', NoErrorRequestHandler),
             web.url('/no-row', NoRowRequestHandler),
+            web.url('/row-count-no-rows', RowCountNoRowsRequestHandler),
             web.url('/status', StatusRequestHandler),
             web.url('/timeout-error', TimeoutErrorRequestHandler),
             web.url('/transaction', TransactionRequestHandler),
@@ -497,6 +511,12 @@ class RequestHandlerMixinTestCase(TestCase):
 
         with self.assertRaises(RuntimeError):
             await asyncio.gather(invoke_cursor(), invoke_cursor())
+
+    def test_row_count_no_rows(self):
+        response = self.fetch('/row-count-no-rows')
+        self.assertEqual(response.code, 200)
+        data = json.loads(response.body)
+        self.assertEqual(data['count'], 5)
 
     @mock.patch('aiopg.cursor.Cursor.execute')
     def test_timeout_error_when_overriding_on_postgres_error(self, execute):
