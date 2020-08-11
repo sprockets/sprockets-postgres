@@ -85,6 +85,22 @@ class ErrorPassthroughRequestHandler(RequestHandler):
             raise web.HTTPError(500, 'Did not pass through')
 
 
+class Psycopg2ErrPassthroughHandler(RequestHandler):
+
+    async def get(self):
+        exc = self._on_postgres_error(
+            'test', errors.InvalidTextRepresentation())
+        if isinstance(exc, errors.InvalidTextRepresentation):
+            self.set_status(204)
+        else:
+            raise web.HTTPError(500, 'Did not pass through')
+
+    def _on_postgres_error(self,
+                           metric_name: str,
+                           exc: Exception) -> typing.Optional[Exception]:
+        return exc
+
+
 class ExecuteRequestHandler(RequestHandler):
 
     GET_SQL = 'SELECT %s::TEXT AS value;'
@@ -250,6 +266,8 @@ class TestCase(testing.SprocketsHttpTestCase):
             web.url('/count', CountRequestHandler),
             web.url('/error', ErrorRequestHandler),
             web.url('/error-passthrough', ErrorPassthroughRequestHandler),
+            web.url(
+                '/postgres-err-passthrough', Psycopg2ErrPassthroughHandler),
             web.url('/execute', ExecuteRequestHandler),
             web.url('/influxdb', InfluxDBRequestHandler),
             web.url('/metrics-mixin', MetricsMixinRequestHandler),
@@ -314,6 +332,10 @@ class RequestHandlerMixinTestCase(TestCase):
 
     def test_postgres_error_passthrough(self):
         response = self.fetch('/error-passthrough')
+        self.assertEqual(response.code, 204)
+
+    def test_psycopg2_error_passthrough(self):
+        response = self.fetch('/postgres-err-passthrough')
         self.assertEqual(response.code, 204)
 
     def test_postgres_execute(self):
@@ -390,7 +412,6 @@ class RequestHandlerMixinTestCase(TestCase):
         execute.side_effect = psycopg2.Error()
         response = self.fetch('/execute?value=1')
         self.assertEqual(response.code, 500)
-        self.assertIn(b'Database Error', response.body)
 
     @mock.patch('aiopg.cursor.Cursor.fetchone')
     def test_postgres_programming_error(self, fetchone):
