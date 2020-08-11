@@ -340,26 +340,22 @@ class ApplicationMixin:
                         timeout=timeout) as cursor:
                     yield PostgresConnector(
                         cursor, on_error, on_duration, timeout)
-        except (asyncio.TimeoutError, psycopg2.Error) as err:
-            message = str(err)
+        except (asyncio.TimeoutError, psycopg2.OperationalError) as err:
             if isinstance(err, psycopg2.OperationalError) and _attempt == 1:
                 LOGGER.critical('Disconnected from Postgres: %s', err)
-                retry = True
                 if not self._postgres_reconnect.locked():
                     async with self._postgres_reconnect:
-                        retry = await self._postgres_connect()
-                if retry:
-                    await self._postgres_connected.wait()
-                    async with self.postgres_connector(
-                            on_error, on_duration, timeout,
-                            _attempt + 1) as connector:
-                        yield connector
-                    return
-                message = 'disconnected'
-            exc = on_error('postgres_connector', ConnectionException(message))
+                        if await self._postgres_connect():
+                            await self._postgres_connected.wait()
+                            async with self.postgres_connector(
+                                    on_error, on_duration, timeout,
+                                    _attempt + 1) as connector:
+                                yield connector
+                            return
+            exc = on_error('postgres_connector', ConnectionException(str(err)))
             if exc:
                 raise exc
-            else:   # postgres_status.on_error does not return an exception
+            else:  # postgres_status.on_error does not return an exception
                 yield None
 
     async def postgres_status(self) -> dict:

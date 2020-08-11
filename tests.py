@@ -216,6 +216,51 @@ class TransactionRequestHandler(RequestHandler):
             'user': self.cast_data(user.row)})
 
 
+class TimeoutErrorRequestHandler(RequestHandler):
+
+    GET_SQL = 'SELECT 1;'
+
+    async def get(self):
+        await self.postgres_execute(self.GET_SQL)
+        raise web.HTTPError(500, 'This should have failed')
+
+    def _on_postgres_error(self,
+                           metric_name: str,
+                           exc: Exception) -> typing.Optional[Exception]:
+        """Override for different error handling behaviors
+
+        Return an exception if you would like for it to be raised, or swallow
+        it here.
+
+        """
+        if isinstance(exc, asyncio.TimeoutError):
+            raise web.HTTPError(418)
+        return exc
+
+
+class UnhandledExceptionRequestHandler(RequestHandler):
+
+    GET_SQL = 'SELECT 100 / 0;'
+
+    async def get(self):
+        try:
+            await self.postgres_execute(self.GET_SQL)
+        except psycopg2.DataError:
+            raise web.HTTPError(422)
+        raise web.HTTPError(500, 'This should have failed')
+
+    def _on_postgres_error(self,
+                           metric_name: str,
+                           exc: Exception) -> typing.Optional[Exception]:
+        """Override for different error handling behaviors
+
+        Return an exception if you would like for it to be raised, or swallow
+        it here.
+
+        """
+        return exc
+
+
 class Application(sprockets_postgres.ApplicationMixin,
                   app.Application):
 
@@ -257,8 +302,10 @@ class TestCase(testing.SprocketsHttpTestCase):
             web.url('/no-error', NoErrorRequestHandler),
             web.url('/no-row', NoRowRequestHandler),
             web.url('/status', StatusRequestHandler),
+            web.url('/timeout-error', TimeoutErrorRequestHandler),
             web.url('/transaction', TransactionRequestHandler),
-            web.url('/transaction/(?P<test_id>.*)', TransactionRequestHandler)
+            web.url('/transaction/(?P<test_id>.*)', TransactionRequestHandler),
+            web.url('/unhandled-exception', UnhandledExceptionRequestHandler)
         ])
         return self.app
 
@@ -450,6 +497,16 @@ class RequestHandlerMixinTestCase(TestCase):
 
         with self.assertRaises(RuntimeError):
             await asyncio.gather(invoke_cursor(), invoke_cursor())
+
+    @mock.patch('aiopg.cursor.Cursor.execute')
+    def test_timeout_error_when_overriding_on_postgres_error(self, execute):
+        execute.side_effect = asyncio.TimeoutError
+        response = self.fetch('/timeout-error')
+        self.assertEqual(response.code, 418)
+
+    def test_unhandled_exception_in_on_postgres_error(self):
+        response = self.fetch('/unhandled-exception')
+        self.assertEqual(response.code, 422)
 
 
 class TransactionTestCase(TestCase):
