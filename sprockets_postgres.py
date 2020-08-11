@@ -266,6 +266,13 @@ class PostgresConnector:
                     'Unexpected value for ProgrammingError(%s).pgcode: %r',
                     err, err.pgcode)
 
+        # This logic exists so that we can wrap the results and quickly free
+        # the cursor / connection. We do not know if the query was a SELECT,
+        # INSERT, UPDATE, or DELETE and we may impact multiple rows, but not
+        # have any data to retrieve. The ProgrammingErrror is raised in this
+        # context. It is raised in other contexts, such as when there is an
+        # error in the query, but that will be caught on L248
+
         if self.cursor.rowcount == 1:
             try:
                 row = dict(await self.cursor.fetchone())
