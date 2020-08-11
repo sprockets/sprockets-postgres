@@ -350,6 +350,8 @@ class ApplicationMixin:
                             _attempt + 1) as connector:
                         yield connector
                     return
+            # Handle timeout error during cursor creation as
+            # operational error
             elif isinstance(err, asyncio.TimeoutError):
                 exc = on_error(
                     'postgres_connector', psycopg2.OperationalError(err))
@@ -684,6 +686,8 @@ class RequestHandlerMixin:
             raise web.HTTPError(500, reason='Query Timeout')
         elif isinstance(exc, errors.UniqueViolation):
             raise web.HTTPError(409, reason='Unique Violation')
+        elif isinstance(exc, psycopg2.Error):
+            raise web.HTTPError(500, reason='Database Error')
         return exc
 
     def _on_postgres_timing(self,

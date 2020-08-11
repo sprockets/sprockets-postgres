@@ -390,6 +390,7 @@ class RequestHandlerMixinTestCase(TestCase):
         execute.side_effect = psycopg2.Error()
         response = self.fetch('/execute?value=1')
         self.assertEqual(response.code, 500)
+        self.assertIn(b'Database Error', response.body)
 
     @mock.patch('aiopg.cursor.Cursor.fetchone')
     def test_postgres_programming_error(self, fetchone):
