@@ -444,7 +444,9 @@ class ApplicationMixin:
         if self._postgres_pool:
             self._postgres_pool.close()
 
-        LOGGER.debug('Connecting to %s', url)
+        safe_url = self._obscure_url_password(url)
+        LOGGER.debug('Connecting to %s', safe_url)
+
         try:
             self._postgres_pool = await pool.Pool.from_pool_fill(
                 url,
@@ -475,12 +477,24 @@ class ApplicationMixin:
                         DEFAULT_POSTGRES_CONNECTION_TTL)))
         except (psycopg2.OperationalError,
                 psycopg2.Error) as error:  # pragma: nocover
-            LOGGER.warning('Error connecting to PostgreSQL on startup: %s',
-                           error)
+            LOGGER.warning(
+                'Error connecting to PostgreSQL on startup with %s: %s',
+                safe_url, error)
             return False
         self._postgres_connected.set()
         LOGGER.debug('Connected to Postgres')
         return True
+
+    @staticmethod
+    def _obscure_url_password(url):
+        """Generate log safe url with password obscured."""
+        parsed = parse.urlparse(url)
+        if parsed.password:
+            netloc = '{}:*****@{}:{}'.format(parsed.username,
+                                             parsed.hostname,
+                                             parsed.port)
+            url = parse.urlunparse(parsed._replace(netloc=netloc))
+        return url
 
     async def _postgres_on_start(self,
                                  _app: web.Application,

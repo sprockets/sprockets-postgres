@@ -579,6 +579,22 @@ class MissingURLTestCase(unittest.TestCase):
         obj.stop.assert_called_once()
 
 
+class ObscurePasswordUrlTestCase(unittest.TestCase):
+
+    def test_passwords_obscured(self):
+        for url, expected in {
+            'postgresql://server:5432/database':
+                'postgresql://server:5432/database',
+            'postgresql://username:password@server:5432/database':
+                'postgresql://username:*****@server:5432/database',
+            'postgresql://username@server/database':
+                'postgresql://username@server/database'
+        }.items():
+            result = \
+                sprockets_postgres.ApplicationMixin._obscure_url_password(url)
+            self.assertEqual(result, expected)
+
+
 SRV = collections.namedtuple(
     'SRV', ['host', 'port', 'priority', 'weight', 'ttl'])
 
