@@ -602,8 +602,8 @@ class RequestHandlerMixin:
 
         """
         async with self.application.postgres_connector(
-                self._on_postgres_error,
-                self._on_postgres_timing,
+                self.on_postgres_error,
+                self.on_postgres_timing,
                 timeout) as connector:
             return await connector.callproc(
                 name, parameters, metric_name, timeout=timeout)
@@ -641,8 +641,8 @@ class RequestHandlerMixin:
 
         """
         async with self.application.postgres_connector(
-                self._on_postgres_error,
-                self._on_postgres_timing,
+                self.on_postgres_error,
+                self.on_postgres_timing,
                 timeout) as connector:
             return await connector.execute(
                 sql, parameters, metric_name, timeout=timeout)
@@ -688,15 +688,15 @@ class RequestHandlerMixin:
 
         """
         async with self.application.postgres_connector(
-                self._on_postgres_error,
-                self._on_postgres_timing,
+                self.on_postgres_error,
+                self.on_postgres_timing,
                 timeout) as connector:
             async with connector.transaction():
                 yield connector
 
-    def _on_postgres_error(self,
-                           metric_name: str,
-                           exc: Exception) -> typing.Optional[Exception]:
+    def on_postgres_error(self,
+                          metric_name: str,
+                          exc: Exception) -> typing.Optional[Exception]:
         """Override for different error handling behaviors
 
         Return an exception if you would like for it to be raised, or swallow
@@ -716,9 +716,9 @@ class RequestHandlerMixin:
             raise web.HTTPError(500, reason='Database Error')
         return exc
 
-    def _on_postgres_timing(self,
-                            metric_name: str,
-                            duration: float) -> None:
+    def on_postgres_timing(self,
+                           metric_name: str,
+                           duration: float) -> None:
         """Override for custom metric recording. As a default behavior it will
         attempt to detect `sprockets-influxdb
         <https://sprockets-influxdb.readthedocs.io/>`_ and

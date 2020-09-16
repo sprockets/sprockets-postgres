@@ -69,16 +69,16 @@ class ErrorRequestHandler(RequestHandler):
         await self.postgres_execute(self.GET_SQL)
         self.set_status(204)
 
-    def _on_postgres_error(self,
-                           metric_name: str,
-                           exc: Exception) -> typing.Optional[Exception]:
+    def on_postgres_error(self,
+                          metric_name: str,
+                          exc: Exception) -> typing.Optional[Exception]:
         return RuntimeError()
 
 
 class ErrorPassthroughRequestHandler(RequestHandler):
 
     async def get(self):
-        exc = self._on_postgres_error('test', RuntimeError())
+        exc = self.on_postgres_error('test', RuntimeError())
         if isinstance(exc, RuntimeError):
             self.set_status(204)
         else:
@@ -156,9 +156,9 @@ class MultiRowRequestHandler(RequestHandler):
 
 class NoErrorRequestHandler(ErrorRequestHandler):
 
-    def _on_postgres_error(self,
-                           metric_name: str,
-                           exc: Exception) -> typing.Optional[Exception]:
+    def on_postgres_error(self,
+                          metric_name: str,
+                          exc: Exception) -> typing.Optional[Exception]:
         return None
 
 
@@ -228,9 +228,9 @@ class TimeoutErrorRequestHandler(RequestHandler):
         await self.postgres_execute(self.GET_SQL)
         raise web.HTTPError(500, 'This should have failed')
 
-    def _on_postgres_error(self,
-                           metric_name: str,
-                           exc: Exception) -> typing.Optional[Exception]:
+    def on_postgres_error(self,
+                          metric_name: str,
+                          exc: Exception) -> typing.Optional[Exception]:
         """Override for different error handling behaviors
 
         Return an exception if you would like for it to be raised, or swallow
@@ -253,9 +253,9 @@ class UnhandledExceptionRequestHandler(RequestHandler):
             raise web.HTTPError(422)
         raise web.HTTPError(500, 'This should have failed')
 
-    def _on_postgres_error(self,
-                           metric_name: str,
-                           exc: Exception) -> typing.Optional[Exception]:
+    def on_postgres_error(self,
+                          metric_name: str,
+                          exc: Exception) -> typing.Optional[Exception]:
         """Override for different error handling behaviors
 
         Return an exception if you would like for it to be raised, or swallow
