@@ -724,23 +724,22 @@ class RequestHandlerMixin:
         if isinstance(exc, ConnectionException):
             if problemdetails:
                 raise problemdetails.Problem(
-                    status_code=503, title='Database Connection Error',
-                    detail=str(exc))
+                    status_code=503, title='Database Connection Error')
             raise web.HTTPError(503, reason='Database Connection Error')
         elif isinstance(exc, asyncio.TimeoutError):
             if problemdetails:
                 raise problemdetails.Problem(
-                    status_code=500, title='Query Timeout', detail=str(exc))
+                    status_code=500, title='Query Timeout')
             raise web.HTTPError(500, reason='Query Timeout')
         elif isinstance(exc, errors.UniqueViolation):
             if problemdetails:
                 raise problemdetails.Problem(
-                    status_code=409, title='Unique Violation', detail=str(exc))
+                    status_code=409, title='Unique Violation')
             raise web.HTTPError(409, reason='Unique Violation')
         elif isinstance(exc, psycopg2.Error):
             if problemdetails:
                 raise problemdetails.Problem(
-                    status_code=500, title='Database Error', detail=str(exc))
+                    status_code=500, title='Database Error')
             raise web.HTTPError(500, reason='Database Error')
         return exc
 
