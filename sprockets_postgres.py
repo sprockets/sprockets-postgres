@@ -16,6 +16,10 @@ from aiodns import error as aiodns_error
 from aiopg import pool
 from psycopg2 import errors, extras
 from tornado import ioloop, web
+try:
+    import problemdetails
+except ImportError:  # pragma: nocover
+    problemdetails = None
 
 LOGGER = logging.getLogger('sprockets-postgres')
 
@@ -369,7 +373,10 @@ class ApplicationMixin:
                                     _attempt + 1) as connector:
                                 yield connector
                             return
-            exc = on_error('postgres_connector', ConnectionException(str(err)))
+            if on_error is None:
+                raise ConnectionException(str(err))
+            exc = on_error(
+                'postgres_connector', ConnectionException(str(err)))
             if exc:
                 raise exc
             else:  # postgres_status.on_error does not return an exception
@@ -699,7 +706,13 @@ class RequestHandlerMixin:
     def on_postgres_error(self,
                           metric_name: str,
                           exc: Exception) -> typing.Optional[Exception]:
-        """Override for different error handling behaviors
+        """Invoked when an error occurs when executing a query
+
+        If `tornado-problem-details` is available,
+        :exc:`problemdetails.Problem` will be raised instead of
+        :exc:`tornado.web.HTTPError`.
+
+        Override for different error handling behaviors.
 
         Return an exception if you would like for it to be raised, or swallow
         it here.
@@ -709,12 +722,24 @@ class RequestHandlerMixin:
                      exc.__class__.__name__, self.__class__.__name__,
                      metric_name, str(exc).split('\n')[0])
         if isinstance(exc, ConnectionException):
+            if problemdetails:
+                raise problemdetails.Problem(
+                    status_code=503, title='Database Connection Error')
             raise web.HTTPError(503, reason='Database Connection Error')
         elif isinstance(exc, asyncio.TimeoutError):
+            if problemdetails:
+                raise problemdetails.Problem(
+                    status_code=500, title='Query Timeout')
             raise web.HTTPError(500, reason='Query Timeout')
         elif isinstance(exc, errors.UniqueViolation):
+            if problemdetails:
+                raise problemdetails.Problem(
+                    status_code=409, title='Unique Violation')
             raise web.HTTPError(409, reason='Unique Violation')
         elif isinstance(exc, psycopg2.Error):
+            if problemdetails:
+                raise problemdetails.Problem(
+                    status_code=500, title='Database Error')
             raise web.HTTPError(500, reason='Database Error')
         return exc
 
