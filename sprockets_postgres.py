@@ -373,7 +373,10 @@ class ApplicationMixin:
                                     _attempt + 1) as connector:
                                 yield connector
                             return
-            exc = on_error('postgres_connector', ConnectionException(str(err)))
+            if on_error is None:
+                raise ConnectionException(str(err))
+            exc = on_error(
+                'postgres_connector', ConnectionException(str(err)))
             if exc:
                 raise exc
             else:  # postgres_status.on_error does not return an exception
