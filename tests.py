@@ -715,7 +715,7 @@ class SRVTestCase(asynctest.TestCase):
         loop = ioloop.IOLoop.current()
         with mock.patch.object(obj, '_resolve_srv') as resolve_srv:
             resolve_srv.return_value = []
-            os.environ['POSTGRES_URL'] = 'aws+srv://foo@bar/baz'
+            obj._postgres_settings['url'] = 'aws+srv://foo@bar/baz'
             await obj._postgres_on_start(obj, loop)
         stop.assert_called_once_with(loop)
         critical.assert_any_call('No SRV records found')
@@ -727,7 +727,7 @@ class SRVTestCase(asynctest.TestCase):
         loop = ioloop.IOLoop.current()
         with mock.patch.object(obj, '_resolve_srv') as resolve_srv:
             resolve_srv.return_value = []
-            os.environ['POSTGRES_URL'] = 'postgresql+srv://foo@bar/baz'
+            obj._postgres_settings['url'] = 'postgresql+srv://foo@bar/baz'
             await obj._postgres_on_start(obj, loop)
         stop.assert_called_once_with(loop)
         critical.assert_any_call('No SRV records found')
@@ -737,7 +737,7 @@ class SRVTestCase(asynctest.TestCase):
     async def test_unsupported_srv_uri(self, critical, stop):
         obj = Application()
         loop = ioloop.IOLoop.current()
-        os.environ['POSTGRES_URL'] = 'postgres+srv://foo@bar/baz'
+        obj._postgres_settings['url'] = 'postgres+srv://foo@bar/baz'
         await obj._postgres_on_start(obj, loop)
         stop.assert_called_once_with(loop)
         critical.assert_any_call(
