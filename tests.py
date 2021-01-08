@@ -319,6 +319,11 @@ class TestCase(testing.SprocketsHttpTestCase):
                 name, _, value = line.strip().partition('=')
                 os.environ[name] = value
 
+    def tearDown(self):
+        if self.app._postgres_pool is not None:
+            self.app._postgres_pool.terminate()
+        super().tearDown()
+
     def get_app(self):
         self.app = Application(handlers=[
             web.url('/callproc', CallprocRequestHandler),

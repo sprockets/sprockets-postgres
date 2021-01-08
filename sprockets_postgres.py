@@ -459,31 +459,43 @@ class ApplicationMixin:
         try:
             self._postgres_pool = await pool.Pool.from_pool_fill(
                 url,
-                maxsize=int(
-                    os.environ.get(
+                maxsize=self.settings.get(
+                    'postgres_max_pool_size',
+                    int(os.environ.get(
                         'POSTGRES_MAX_POOL_SIZE',
-                        DEFAULT_POSTGRES_MAX_POOL_SIZE)),
-                minsize=int(
-                    os.environ.get(
+                        DEFAULT_POSTGRES_MAX_POOL_SIZE))),
+                minsize=self.settings.get(
+                    'postgres_min_pool_size',
+                    int(os.environ.get(
                         'POSTGRES_MIN_POOL_SIZE',
-                        DEFAULT_POSTGRES_MIN_POOL_SIZE)),
-                timeout=int(
-                    os.environ.get(
-                        'POSTGRES_CONNECT_TIMEOUT',
-                        DEFAULT_POSTGRES_CONNECTION_TIMEOUT)),
-                enable_hstore=util.strtobool(
-                    os.environ.get(
-                        'POSTGRES_HSTORE', DEFAULT_POSTGRES_HSTORE)),
-                enable_json=util.strtobool(
-                    os.environ.get('POSTGRES_JSON', DEFAULT_POSTGRES_JSON)),
-                enable_uuid=util.strtobool(
-                    os.environ.get('POSTGRES_UUID', DEFAULT_POSTGRES_UUID)),
+                        DEFAULT_POSTGRES_MIN_POOL_SIZE))),
+                timeout=self.settings.get(
+                    'postgres_connect_timeout',
+                    int(os.environ.get(
+                            'POSTGRES_CONNECT_TIMEOUT',
+                            DEFAULT_POSTGRES_CONNECTION_TIMEOUT))),
+                enable_hstore=self.settings.get(
+                    'postgres_hstore',
+                    util.strtobool(
+                        os.environ.get(
+                            'POSTGRES_HSTORE', DEFAULT_POSTGRES_HSTORE))),
+                enable_json=self.settings.get(
+                    'enable_json',
+                    util.strtobool(
+                        os.environ.get(
+                            'POSTGRES_JSON', DEFAULT_POSTGRES_JSON))),
+                enable_uuid=self.settings.get(
+                    'postgres_uuid',
+                    util.strtobool(
+                        os.environ.get(
+                            'POSTGRES_UUID', DEFAULT_POSTGRES_UUID))),
                 echo=False,
                 on_connect=None,
-                pool_recycle=int(
-                    os.environ.get(
+                pool_recycle=self.settings.get(
+                    'postgres_connection_ttl',
+                    int(os.environ.get(
                         'POSTGRES_CONNECTION_TTL',
-                        DEFAULT_POSTGRES_CONNECTION_TTL)))
+                        DEFAULT_POSTGRES_CONNECTION_TTL))))
         except (psycopg2.OperationalError,
                 psycopg2.Error) as error:  # pragma: nocover
             LOGGER.warning(
