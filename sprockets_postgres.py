@@ -436,7 +436,7 @@ class ApplicationMixin:
         }
 
     def _create_postgres_settings(self) -> dict:
-       return {
+        return {
             'url': self.settings.get(
                 'postgres_url', os.environ.get('POSTGRES_URL')),
             'max_pool_size': int(self.settings.get(
@@ -459,27 +459,27 @@ class ApplicationMixin:
                 os.environ.get(
                     'POSTGRES_CONNECTION_TTL',
                     DEFAULT_POSTGRES_CONNECTION_TIMEOUT))),
-           'enable_hstore': self.settings.get(
-               'postgres_hstore',
-               util.strtobool(
-                   os.environ.get(
-                       'POSTGRES_HSTORE', DEFAULT_POSTGRES_HSTORE))),
-           'enable_json': self.settings.get(
-               'postgres_json',
-               util.strtobool(
-                   os.environ.get(
-                       'POSTGRES_JSON', DEFAULT_POSTGRES_JSON))),
-           'enable_uuid': self.settings.get(
-               'postgres_uuid',
-               util.strtobool(
-                   os.environ.get(
-                       'POSTGRES_UUID', DEFAULT_POSTGRES_UUID))),
-           'query_timeout': int(self.settings.get(
-               'postgres_query_timeout',
-               os.environ.get(
-                   'POSTGRES_QUERY_TIMEOUT',
-                   DEFAULT_POSTGRES_QUERY_TIMEOUT))),
-       }
+            'enable_hstore': self.settings.get(
+                'postgres_hstore',
+                util.strtobool(
+                    os.environ.get(
+                        'POSTGRES_HSTORE', DEFAULT_POSTGRES_HSTORE))),
+            'enable_json': self.settings.get(
+                'postgres_json',
+                util.strtobool(
+                    os.environ.get(
+                        'POSTGRES_JSON', DEFAULT_POSTGRES_JSON))),
+            'enable_uuid': self.settings.get(
+                'postgres_uuid',
+                util.strtobool(
+                    os.environ.get(
+                        'POSTGRES_UUID', DEFAULT_POSTGRES_UUID))),
+            'query_timeout': int(self.settings.get(
+                'postgres_query_timeout',
+                os.environ.get(
+                    'POSTGRES_QUERY_TIMEOUT',
+                    DEFAULT_POSTGRES_QUERY_TIMEOUT)))
+        }
 
     async def _postgres_connect(self) -> bool:
         """Setup the Postgres pool of connections"""
