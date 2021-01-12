@@ -760,6 +760,11 @@ class RequestHandlerMixin:
                 raise problemdetails.Problem(
                     status_code=500, title='Query Timeout')
             raise web.HTTPError(500, reason='Query Timeout')
+        elif isinstance(exc, errors.ForeignKeyViolation):
+            if problemdetails:
+                raise problemdetails.Problem(
+                    status_code=409, title='Foreign Key Violation')
+            raise web.HTTPError(409, reason='Foreign Key Violation')
         elif isinstance(exc, errors.UniqueViolation):
             if problemdetails:
                 raise problemdetails.Problem(
