@@ -408,7 +408,8 @@ class ApplicationMixin:
             }
 
         """
-        if not self._postgres_connected.is_set():
+        if not self._postgres_connected or \
+                not self._postgres_connected.is_set():
             return {
                 'available': False,
                 'pool_size': 0,

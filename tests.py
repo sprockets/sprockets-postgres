@@ -349,6 +349,18 @@ class TestCase(testing.SprocketsHttpTestCase):
         return self.app
 
 
+class PostgresStatusTestCase(asynctest.TestCase):
+
+    async def test_postgres_status_before_first_connection(self):
+        app = Application()
+        status = await app.postgres_status()
+        self.assertEqual(
+            status,
+            {'available': False,
+             'pool_size': 0,
+             'pool_free': 0})
+
+
 class RequestHandlerMixinTestCase(TestCase):
 
     def test_postgres_status(self):
