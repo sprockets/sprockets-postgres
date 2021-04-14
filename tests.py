@@ -361,7 +361,37 @@ class PostgresStatusTestCase(asynctest.TestCase):
              'pool_free': 0})
 
 
+class ReconnectionTestCast(TestCase):
+
+    @ttesting.gen_test
+    async def test_postgres_reconnect(self):
+        response = await self.http_client.fetch(self.get_url('/callproc'))
+        self.assertEqual(response.code, 200)
+        self.assertIsInstance(
+            uuid.UUID(json.loads(response.body)['value']), uuid.UUID)
+
+        # Force close all open connections for tests
+        conn = await aiopg.connect(os.environ['POSTGRES_URL'].split('?')[0])
+        cursor = await conn.cursor()
+        await cursor.execute(
+            'SELECT pg_terminate_backend(pid)'
+            '  FROM pg_stat_activity'
+            " WHERE application_name = 'sprockets_postgres'")
+        await cursor.fetchall()
+        await asyncio.sleep(1)
+        response = await self.http_client.fetch(
+            self.get_url('/callproc'), raise_error=False)
+        self.assertEqual(response.code, 200)
+        conn.close()
+
+
 class RequestHandlerMixinTestCase(TestCase):
+
+    def test_postgres_connected(self):
+        response = self.fetch('/status')
+        data = json.loads(response.body)
+        self.assertEqual(data['status'], 'ok')
+        self.assertTrue(self.app.postgres_is_connected)
 
     def test_postgres_status(self):
         response = self.fetch('/status')
