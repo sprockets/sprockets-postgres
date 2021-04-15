@@ -361,18 +361,27 @@ class ApplicationMixin:
                         as cursor:
                     yield PostgresConnector(
                         cursor, on_error, on_duration, timeout)
-        except (asyncio.TimeoutError, psycopg2.OperationalError) as err:
+        except (asyncio.TimeoutError,
+                psycopg2.OperationalError,
+                RuntimeError) as err:
             if isinstance(err, psycopg2.OperationalError) and _attempt == 1:
                 LOGGER.critical('Disconnected from Postgres: %s', err)
                 if not self._postgres_reconnect.locked():
                     async with self._postgres_reconnect:
+                        LOGGER.info('Reconnecting to Postgres with new Pool')
                         if await self._postgres_connect():
-                            await self._postgres_connected.wait()
-                            async with self.postgres_connector(
-                                    on_error, on_duration, timeout,
-                                    _attempt + 1) as connector:
-                                yield connector
-                            return
+                            try:
+                                await asyncio.wait_for(
+                                    self._postgres_connected.wait(),
+                                    self._postgres_settings['timeout'])
+                            except asyncio.TimeoutError as error:
+                                err = error
+                            else:
+                                async with self.postgres_connector(
+                                        on_error, on_duration, timeout,
+                                        _attempt + 1) as connector:
+                                    yield connector
+                                return
             if on_error is None:
                 raise ConnectionException(str(err))
             exc = on_error(
@@ -381,6 +390,12 @@ class ApplicationMixin:
                 raise exc
             else:  # postgres_status.on_error does not return an exception
                 yield None
+
+    @property
+    def postgres_is_connected(self) -> bool:
+        """Returns `True` if Postgres is currently connected"""
+        return self._postgres_connected is not None \
+            and self._postgres_connected.is_set()
 
     async def postgres_status(self) -> dict:
         """Invoke from the ``/status`` RequestHandler to check that there is
@@ -408,8 +423,7 @@ class ApplicationMixin:
             }
 
         """
-        if not self._postgres_connected or \
-                not self._postgres_connected.is_set():
+        if not self.postgres_is_connected:
             return {
                 'available': False,
                 'pool_size': 0,
@@ -497,11 +511,11 @@ class ApplicationMixin:
         else:
             url = self._postgres_settings['url']
 
-        if self._postgres_pool:
-            self._postgres_pool.close()
-
         safe_url = self._obscure_url_password(url)
         LOGGER.debug('Connecting to %s', safe_url)
+
+        if self._postgres_pool and not self._postgres_pool.closed:
+            self._postgres_pool.close()
 
         try:
             self._postgres_pool = await pool.Pool.from_pool_fill(
@@ -513,7 +527,7 @@ class ApplicationMixin:
                 enable_json=self._postgres_settings['enable_json'],
                 enable_uuid=self._postgres_settings['enable_uuid'],
                 echo=False,
-                on_connect=None,
+                on_connect=self._on_postgres_connect,
                 pool_recycle=self._postgres_settings['connection_ttl'])
         except psycopg2.Error as error:  # pragma: nocover
             LOGGER.warning(
@@ -534,6 +548,9 @@ class ApplicationMixin:
                                              parsed.port)
             url = parse.urlunparse(parsed._replace(netloc=netloc))
         return url
+
+    async def _on_postgres_connect(self, conn):
+        LOGGER.debug('New postgres connection %s', conn)
 
     async def _postgres_on_start(self,
                                  _app: web.Application,
@@ -640,6 +657,7 @@ class RequestHandlerMixin:
         :rtype: :class:`~sprockets_postgres.QueryResult`
 
         """
+        self._postgres_connection_check()
         async with self.application.postgres_connector(
                 self.on_postgres_error,
                 self.on_postgres_timing,
@@ -679,6 +697,7 @@ class RequestHandlerMixin:
         :rtype: :class:`~sprockets_postgres.QueryResult`
 
         """
+        self._postgres_connection_check()
         async with self.application.postgres_connector(
                 self.on_postgres_error,
                 self.on_postgres_timing,
@@ -726,6 +745,7 @@ class RequestHandlerMixin:
             likely be more specific.
 
         """
+        self._postgres_connection_check()
         async with self.application.postgres_connector(
                 self.on_postgres_error,
                 self.on_postgres_timing,
@@ -771,6 +791,11 @@ class RequestHandlerMixin:
                 raise problemdetails.Problem(
                     status_code=409, title='Unique Violation')
             raise web.HTTPError(409, reason='Unique Violation')
+        elif isinstance(exc, psycopg2.OperationalError):
+            if problemdetails:
+                raise problemdetails.Problem(
+                    status_code=503, title='Database Error')
+            raise web.HTTPError(503, reason='Database Error')
         elif isinstance(exc, psycopg2.Error):
             if problemdetails:
                 raise problemdetails.Problem(
@@ -800,6 +825,19 @@ class RequestHandlerMixin:
         else:
             LOGGER.debug('Postgres query %s duration: %s',
                          metric_name, duration)
+
+    def _postgres_connection_check(self):
+        """Ensures Postgres is connected, exiting the request in error if not
+
+        :raises: problemdetails.Problem
+        :raises: web.HTTPError
+
+        """
+        if not self.application.postgres_is_connected:
+            if problemdetails:
+                raise problemdetails.Problem(
+                    status_code=503, title='Database Connection Error')
+            raise web.HTTPError(503, reason='Database Connection Error')
 
 
 class StatusRequestHandler(web.RequestHandler):

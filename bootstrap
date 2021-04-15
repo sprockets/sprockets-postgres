@@ -71,7 +71,7 @@ report_done
 
 cat > build/test-environment<<EOF
 export ASYNC_TEST_TIMEOUT=5
-export POSTGRES_URL=postgresql://postgres@${TEST_HOST}:$(get_exposed_port postgres 5432)/postgres
+export POSTGRES_URL=postgresql://postgres@${TEST_HOST}:$(get_exposed_port postgres 5432)/postgres?application_name=sprockets_postgres
 EOF
 
 printf "\nBootstrap complete\n\nDon't forget to \"source build/test-environment\"\n"
