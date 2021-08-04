@@ -743,7 +743,6 @@ class SRVTestCase(asynctest.TestCase):
         obj = Application()
         result = await obj._resolve_srv('_xmpp-server._tcp.google.com')
         self.assertIsInstance(result[0], pycares.ares_query_srv_result)
-        self.assertGreater(result[0].ttl, 0)
 
     async def test_srv_error(self):
         obj = Application()
