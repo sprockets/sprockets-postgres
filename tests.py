@@ -415,7 +415,7 @@ class RequestHandlerMixinTestCase(TestCase):
         data = json.loads(response.body)
         self.assertEqual(data['status'], 'unavailable')
 
-    @mock.patch('aiopg.cursor.Cursor.execute')
+    @mock.patch('aiopg.Cursor.execute')
     def test_postgres_status_error(self, execute):
         execute.side_effect = asyncio.TimeoutError()
         response = self.fetch('/status')
@@ -428,7 +428,7 @@ class RequestHandlerMixinTestCase(TestCase):
         self.assertIsInstance(
             uuid.UUID(json.loads(response.body)['value']), uuid.UUID)
 
-    @mock.patch('aiopg.cursor.Cursor.execute')
+    @mock.patch('aiopg.Cursor.execute')
     def test_postgres_error(self, execute):
         execute.side_effect = asyncio.TimeoutError
         response = self.fetch('/error')
@@ -556,7 +556,7 @@ class RequestHandlerMixinTestCase(TestCase):
         data = json.loads(response.body)
         self.assertEqual(data['count'], 5)
 
-    @mock.patch('aiopg.cursor.Cursor.execute')
+    @mock.patch('aiopg.Cursor.execute')
     def test_timeout_error_when_overriding_on_postgres_error(self, execute):
         execute.side_effect = asyncio.TimeoutError
         response = self.fetch('/timeout-error')
@@ -566,7 +566,7 @@ class RequestHandlerMixinTestCase(TestCase):
         response = self.fetch('/unhandled-exception')
         self.assertEqual(response.code, 422)
 
-    @mock.patch('aiopg.cursor.Cursor.execute')
+    @mock.patch('aiopg.Cursor.execute')
     def test_postgres_execute_timeout_error(self, execute):
         execute.side_effect = asyncio.TimeoutError()
         response = self.fetch('/pdexecute?value=1')
@@ -574,7 +574,7 @@ class RequestHandlerMixinTestCase(TestCase):
         problem = json.loads(response.body)
         self.assertEqual(problem['title'], 'Query Timeout')
 
-    @mock.patch('aiopg.cursor.Cursor.execute')
+    @mock.patch('aiopg.Cursor.execute')
     def test_postgres_execute_unique_violation(self, execute):
         execute.side_effect = errors.UniqueViolation()
         response = self.fetch('/pdexecute?value=1')
@@ -582,7 +582,7 @@ class RequestHandlerMixinTestCase(TestCase):
         problem = json.loads(response.body)
         self.assertEqual(problem['title'], 'Unique Violation')
 
-    @mock.patch('aiopg.cursor.Cursor.execute')
+    @mock.patch('aiopg.Cursor.execute')
     def test_postgres_execute_error(self, execute):
         execute.side_effect = psycopg2.Error()
         response = self.fetch('/pdexecute?value=1')
@@ -590,7 +590,7 @@ class RequestHandlerMixinTestCase(TestCase):
         problem = json.loads(response.body)
         self.assertEqual(problem['title'], 'Database Error')
 
-    @mock.patch('aiopg.cursor.Cursor.fetchone')
+    @mock.patch('aiopg.Cursor.fetchone')
     def test_postgres_programming_error(self, fetchone):
         fetchone.side_effect = psycopg2.ProgrammingError()
         response = self.fetch('/pdexecute?value=1')
@@ -609,28 +609,28 @@ class HTTPErrorTestCase(TestCase):
         sprockets_postgres.problemdetails = self._problemdetails
         super().tearDown()
 
-    @mock.patch('aiopg.cursor.Cursor.execute')
+    @mock.patch('aiopg.Cursor.execute')
     def test_postgres_execute_timeout_error(self, execute):
         execute.side_effect = asyncio.TimeoutError()
         response = self.fetch('/execute?value=1')
         self.assertEqual(response.code, 500)
         self.assertIn(b'Query Timeout', response.body)
 
-    @mock.patch('aiopg.cursor.Cursor.execute')
+    @mock.patch('aiopg.Cursor.execute')
     def test_postgres_execute_unique_violation(self, execute):
         execute.side_effect = errors.UniqueViolation()
         response = self.fetch('/execute?value=1')
         self.assertEqual(response.code, 409)
         self.assertIn(b'Unique Violation', response.body)
 
-    @mock.patch('aiopg.cursor.Cursor.execute')
+    @mock.patch('aiopg.Cursor.execute')
     def test_postgres_execute_error(self, execute):
         execute.side_effect = psycopg2.Error()
         response = self.fetch('/execute?value=1')
         self.assertEqual(response.code, 500)
         self.assertIn(b'Database Error', response.body)
 
-    @mock.patch('aiopg.cursor.Cursor.fetchone')
+    @mock.patch('aiopg.Cursor.fetchone')
     def test_postgres_programming_error(self, fetchone):
         fetchone.side_effect = psycopg2.ProgrammingError()
         response = self.fetch('/execute?value=1')
@@ -650,7 +650,7 @@ class HTTPErrorTestCase(TestCase):
 
 class NoMixinTestCase(TestCase):
 
-    @mock.patch('aiopg.cursor.Cursor.execute')
+    @mock.patch('aiopg.Cursor.execute')
     def test_postgres_cursor_raises(self, execute):
         execute.side_effect = psycopg2.ProgrammingError()
         response = self.fetch('/no-mixin')
@@ -743,7 +743,6 @@ class SRVTestCase(asynctest.TestCase):
         obj = Application()
         result = await obj._resolve_srv('_xmpp-server._tcp.google.com')
         self.assertIsInstance(result[0], pycares.ares_query_srv_result)
-        self.assertGreater(result[0].ttl, 0)
 
     async def test_srv_error(self):
         obj = Application()
